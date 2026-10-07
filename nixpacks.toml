@@ -1,0 +1,12 @@
+# Railway (Nixpacks) build config — ffmpeg included for yt-dlp MP3 conversion
+[variables]
+NIXPACKS_PYTHON_VERSION = "3.9"
+
+[phases.setup]
+nixPkgs = ["ffmpeg"]
+
+[phases.install]
+cmds = ["pip install -r requirements.txt"]
+
+[start]
+cmd = "bash start.sh"

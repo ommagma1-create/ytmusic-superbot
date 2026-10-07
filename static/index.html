@@ -1,0 +1,2802 @@
+<!DOCTYPE html>
+<!-- ============================================================================
+     YTMUSIC Studio — Mini App frontend (MEGA build)
+     ----------------------------------------------------------------------------
+     YouTube-desktop-grade single-file web app for the YTMUSIC Studio Telegram
+     Mini App. Dark-first, three themes (Dark / Light / AMOLED), EN + Hindi UI,
+     hash router, shelves, watch-style track view, download-job manager with
+     live progress, playlists, history, account (cookies.txt) hub, settings,
+     command palette (Ctrl+K), keyboard shortcuts, toasts, dialogs, skeletons.
+
+     Backend contract (webapp.py) — unchanged:
+       POST /api/search            JSON {q, initData}        -> {ok, results[]}
+       POST /api/download          JSON {video_id, quality, initData}
+                                                         -> {ok, job_id}
+       GET  /api/job/<job_id>      ?initData=                -> {ok, job{...}}
+       GET  /api/cookies/status    ?initData=                -> {ok, linked}
+       POST /api/cookies           form {initData, cookies}  -> {ok, linked}
+       DELETE /api/cookies         {initData}                -> {ok, linked}
+     Qualities: mp3_128 | mp3_320 | mp4_720
+     Auth: every API call needs Telegram WebApp initData. Outside Telegram
+     the UI stays fully browsable; API-backed actions show a clear notice.
+     ========================================================================== -->
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#0f0f0f" id="metaTheme">
+<title>YTMUSIC Studio</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+/* ==========================================================================
+   1. DESIGN TOKENS
+   ========================================================================== */
+:root{
+  --font: "Roboto","Segoe UI",system-ui,-apple-system,"Noto Sans",sans-serif;
+  --font-display:"Roboto","Segoe UI",system-ui,sans-serif;
+
+  /* YouTube-desktop dark (default) */
+  --bg:#0f0f0f; --bg-2:#161616; --bg-elev:#212121; --bg-elev-2:#2b2b2b;
+  --bg-hover:#3d3d3d; --bg-active:#4d4d4d;
+  --text:#f1f1f1; --text-2:#aaaaaa; --text-3:#717171;
+  --border:#3d3d3d; --border-soft:#272727;
+  --accent:#ff0033; --accent-hover:#cc0029; --accent-soft:rgba(255,0,51,.12);
+  --blue:#3ea6ff; --blue-soft:rgba(62,166,255,.12);
+  --green:#2ba640; --green-soft:rgba(43,166,64,.14);
+  --amber:#f5a623; --amber-soft:rgba(245,166,35,.14);
+  --purple:#a06bff; --purple-soft:rgba(160,107,255,.14);
+  --shadow-1:0 1px 2px rgba(0,0,0,.4);
+  --shadow-2:0 4px 16px rgba(0,0,0,.5);
+  --shadow-3:0 12px 40px rgba(0,0,0,.6);
+  --radius-s:8px; --radius-m:12px; --radius-l:18px; --radius-xl:24px;
+  --header-h:56px; --sidebar-w:240px; --sidebar-mini-w:72px;
+  --tray-h:0px;
+  --ease:cubic-bezier(.2,.7,.3,1);
+  --dur:160ms;
+}
+html[data-theme="light"]{
+  --bg:#ffffff; --bg-2:#f9f9f9; --bg-elev:#f2f2f2; --bg-elev-2:#e9e9e9;
+  --bg-hover:#e5e5e5; --bg-active:#d9d9d9;
+  --text:#0f0f0f; --text-2:#606060; --text-3:#909090;
+  --border:#d9d9d9; --border-soft:#ececec;
+  --shadow-1:0 1px 2px rgba(0,0,0,.12);
+  --shadow-2:0 4px 16px rgba(0,0,0,.14);
+  --shadow-3:0 12px 40px rgba(0,0,0,.18);
+}
+html[data-theme="amoled"]{
+  --bg:#000000; --bg-2:#050505; --bg-elev:#101010; --bg-elev-2:#181818;
+  --bg-hover:#222222; --bg-active:#333333;
+  --text:#f5f5f5; --text-2:#b0b0b0; --text-3:#777777;
+  --border:#262626; --border-soft:#141414;
+}
+html[data-theme="neon"]{
+  --bg:#070714; --bg-2:#0b0b20; --bg-elev:#131330; --bg-elev-2:#1b1b40;
+  --bg-hover:#23234d; --bg-active:#2f2f63;
+  --text:#f2f2ff; --text-2:#9d9dd2; --text-3:#6a6a9c;
+  --border:#2b2b5c; --border-soft:#1a1a38;
+  --accent:#00e5ff; --accent-hover:#00b8d4;
+  --accent-soft:rgba(0,229,255,.12);
+  --blue:#7b61ff; --blue-soft:rgba(123,97,255,.14);
+  --shadow-1:0 1px 2px rgba(0,0,0,.5);
+  --shadow-2:0 4px 18px rgba(0,229,255,.12);
+  --shadow-3:0 12px 44px rgba(0,229,255,.16);
+}
+html[data-theme="sunset"]{
+  --bg:#170c07; --bg-2:#1f100a; --bg-elev:#2b1710; --bg-elev-2:#3a2015;
+  --bg-hover:#4a2a1a; --bg-active:#5c3822;
+  --text:#fff4ec; --text-2:#cfa68d; --text-3:#96705a;
+  --border:#4a2c1c; --border-soft:#2c1a10;
+  --accent:#ff6a00; --accent-hover:#d45500;
+  --accent-soft:rgba(255,106,0,.14);
+  --blue:#ffd23e; --blue-soft:rgba(255,210,62,.14);
+  --shadow-2:0 4px 18px rgba(255,106,0,.14);
+  --shadow-3:0 12px 44px rgba(255,106,0,.2);
+}
+html[data-theme="ocean"]{
+  --bg:#04121e; --bg-2:#071a2c; --bg-elev:#0b2740; --bg-elev-2:#10334f;
+  --bg-hover:#16405f; --bg-active:#1e5076;
+  --text:#eef7ff; --text-2:#8fb3cc; --text-3:#5d7f99;
+  --border:#1d3f5c; --border-soft:#0e2233;
+  --accent:#38e1ff; --accent-hover:#1fb9d8;
+  --accent-soft:rgba(56,225,255,.12);
+  --blue:#5aa2ff; --blue-soft:rgba(90,162,255,.14);
+  --shadow-2:0 4px 18px rgba(56,225,255,.12);
+  --shadow-3:0 12px 44px rgba(56,225,255,.18);
+}
+/* animated ambient background (new themes only) */
+.ambient{ display:none; position:fixed; inset:0; z-index:0;
+  pointer-events:none; overflow:hidden; }
+html[data-theme="neon"] .ambient, html[data-theme="sunset"] .ambient,
+html[data-theme="ocean"] .ambient{ display:block; }
+.ambient i{ position:absolute; width:58vmax; height:58vmax; border-radius:50%;
+  filter:blur(90px); opacity:.17; }
+.ambient i:first-child{ background:var(--accent); top:-16vmax; right:-14vmax;
+  animation:drift1 26s ease-in-out infinite alternate; }
+.ambient i:last-child{ background:var(--blue); bottom:-19vmax; left:-15vmax;
+  animation:drift2 32s ease-in-out infinite alternate; }
+@keyframes drift1{ to{ transform:translate(-9vmax,7vmax) scale(1.15); } }
+@keyframes drift2{ to{ transform:translate(8vmax,-6vmax) scale(1.12); } }
+#app{ position:relative; z-index:1; }
+/* compact density */
+html[data-density="compact"]{ --card-gap:8px; --pad:10px; }
+:root{ --card-gap:16px; --pad:16px; }
+
+/* ==========================================================================
+   2. RESET / BASE
+   ========================================================================== */
+*,*::before,*::after{ box-sizing:border-box; }
+html,body{ height:100%; }
+body{
+  margin:0; background:var(--bg); color:var(--text);
+  font-family:var(--font); font-size:14px; line-height:1.45;
+  -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
+  overflow:hidden;
+}
+::selection{ background:var(--accent); color:#fff; }
+a{ color:var(--blue); text-decoration:none; }
+a:hover{ text-decoration:underline; }
+button{ font-family:inherit; }
+img{ display:block; max-width:100%; }
+[hidden]{ display:none !important; }
+.sr{ position:absolute; width:1px; height:1px; overflow:hidden;
+     clip:rect(0 0 0 0); white-space:nowrap; }
+
+::-webkit-scrollbar{ width:10px; height:10px; }
+::-webkit-scrollbar-thumb{ background:var(--bg-hover); border-radius:8px;
+  border:2px solid var(--bg); }
+::-webkit-scrollbar-thumb:hover{ background:var(--text-3); }
+::-webkit-scrollbar-track{ background:transparent; }
+*{ scrollbar-width:thin; scrollbar-color:var(--bg-hover) transparent; }
+
+/* focus visibility (keyboard users) */
+:focus-visible{ outline:2px solid var(--blue); outline-offset:2px;
+  border-radius:4px; }
+
+/* reduced motion */
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{ animation-duration:.01ms !important;
+    transition-duration:.01ms !important; }
+}
+html[data-motion="off"] *,html[data-motion="off"] *::before,
+html[data-motion="off"] *::after{
+  animation-duration:.01ms !important; transition-duration:.01ms !important;
+}
+
+/* ==========================================================================
+   3. APP SHELL
+   ========================================================================== */
+#app{ display:flex; flex-direction:column; height:100dvh; }
+#shell{ display:flex; flex:1; min-height:0; }
+#main{ flex:1; min-width:0; display:flex; flex-direction:column; }
+#viewScroll{ flex:1; overflow-y:auto; overflow-x:hidden; padding:0 24px 120px;
+  scroll-behavior:smooth; }
+.view{ max-width:1754px; margin:0 auto; animation:viewIn var(--dur) var(--ease); }
+@keyframes viewIn{ from{ opacity:0; transform:translateY(6px);} to{ opacity:1;
+  transform:none;} }
+
+/* ==========================================================================
+   4. MASTHEAD (YouTube-desktop header)
+   ========================================================================== */
+#masthead{
+  height:var(--header-h); flex:0 0 var(--header-h);
+  display:flex; align-items:center; gap:8px; padding:0 16px;
+  background:var(--bg); position:relative; z-index:60;
+}
+.icon-btn{
+  width:40px; height:40px; border:0; border-radius:50%;
+  background:transparent; color:var(--text); cursor:pointer;
+  display:inline-flex; align-items:center; justify-content:center;
+  font-size:20px; line-height:1; transition:background var(--dur) var(--ease),
+  transform var(--dur) var(--ease);
+  flex:0 0 auto;
+}
+.icon-btn:hover{ background:var(--bg-hover); }
+.icon-btn:active{ transform:scale(.92); }
+.icon-btn[aria-pressed="true"]{ background:var(--bg-active); }
+.brand{ display:flex; align-items:center; gap:10px; cursor:pointer;
+  user-select:none; padding:6px 10px 6px 4px; border-radius:var(--radius-m);
+  border:0; background:transparent; color:var(--text); }
+.brand:hover{ background:var(--bg-hover); }
+.brand-mark{ width:34px; height:34px; border-radius:10px; flex:0 0 auto;
+  background:rgba(255,0,51,.12);
+  border:1px solid rgba(255,0,51,.35);
+  display:flex; align-items:center; justify-content:center;
+  box-shadow:0 0 14px rgba(255,0,51,.35);
+  animation:logoPulse 2.6s ease-in-out infinite; }
+@keyframes logoPulse{ 0%,100%{ box-shadow:0 0 8px rgba(255,0,51,.25); }
+  50%{ box-shadow:0 0 20px rgba(255,0,51,.55); } }
+.eqlogo{ width:22px; height:22px; }
+.eqlogo rect{ transform-box:fill-box; transform-origin:50% 100%;
+  animation:eqb 1.05s ease-in-out infinite; }
+.eqlogo rect:nth-of-type(2){ animation-delay:.14s; }
+.eqlogo rect:nth-of-type(3){ animation-delay:.28s; }
+.eqlogo rect:nth-of-type(4){ animation-delay:.42s; }
+@keyframes eqb{ 0%,100%{ transform:scaleY(.3); } 50%{ transform:scaleY(1); } }
+.brand-name{ font-family:var(--font-display); font-weight:700; font-size:17px;
+  letter-spacing:.2px; white-space:nowrap; }
+.brand-name small{ display:block; font-size:10px; font-weight:500;
+  color:var(--text-2); letter-spacing:2.5px; text-transform:uppercase; }
+
+/* search box */
+#searchWrap{ flex:1; display:flex; justify-content:center; min-width:0; }
+#searchForm{ display:flex; width:min(640px,100%); position:relative; }
+#searchBox{ display:flex; flex:1; min-width:0; }
+#searchInput{
+  flex:1; min-width:0; height:40px; padding:0 4px 0 18px;
+  background:var(--bg-2); border:1px solid var(--border);
+  border-right:0; border-radius:20px 0 0 20px; color:var(--text);
+  font-size:15px; outline:none; transition:border-color var(--dur),
+  box-shadow var(--dur), background var(--dur);
+}
+#searchInput::placeholder{ color:var(--text-3); }
+#searchInput:focus{ border-color:var(--blue); background:var(--bg);
+  box-shadow:inset 0 0 0 1px var(--blue); }
+#searchClear{
+  border:1px solid var(--border); border-left:0; border-right:0;
+  background:var(--bg-2); color:var(--text-2); cursor:pointer; width:40px;
+  font-size:16px; display:none; align-items:center; justify-content:center;
+}
+#searchClear.show{ display:inline-flex; }
+#searchClear:hover{ color:var(--text); }
+#btnSearch{
+  width:64px; height:40px; border:1px solid var(--border);
+  border-radius:0 20px 20px 0; background:var(--bg-elev); color:var(--text);
+  cursor:pointer; font-size:18px; transition:background var(--dur);
+}
+#btnSearch:hover{ background:var(--bg-hover); }
+#suggestBox{
+  position:absolute; top:calc(100% + 6px); left:0; right:64px;
+  background:var(--bg-elev); border:1px solid var(--border);
+  border-radius:var(--radius-m); box-shadow:var(--shadow-3); overflow:hidden;
+  z-index:80; max-height:320px; overflow-y:auto;
+}
+.sugg{ display:flex; align-items:center; gap:12px; width:100%;
+  padding:10px 16px; border:0; background:transparent; color:var(--text);
+  font-size:15px; cursor:pointer; text-align:left; }
+.sugg:hover,.sugg.active{ background:var(--bg-hover); }
+.sugg .ic{ color:var(--text-2); font-size:16px; }
+.sugg .rm{ margin-left:auto; color:var(--text-3); border-radius:50%;
+  width:28px; height:28px; display:inline-flex; align-items:center;
+  justify-content:center; font-size:14px; }
+.sugg .rm:hover{ background:var(--bg-active); color:var(--text); }
+
+#mastRight{ display:flex; align-items:center; gap:4px; margin-left:8px; }
+#avatarBtn{ width:34px; height:34px; border-radius:50%; border:0; cursor:pointer;
+  background:linear-gradient(135deg,#7b2ff7,#f107a3); color:#fff; font-weight:700;
+  font-size:15px; display:flex; align-items:center; justify-content:center; }
+#avatarBtn:hover{ filter:brightness(1.1); }
+
+/* dropdown menu (shared) */
+.menu{ position:absolute; min-width:220px; background:var(--bg-elev);
+  border:1px solid var(--border); border-radius:var(--radius-m);
+  box-shadow:var(--shadow-3); padding:8px; z-index:90;
+  animation:menuIn 140ms var(--ease); }
+@keyframes menuIn{ from{ opacity:0; transform:translateY(-4px) scale(.98);} 
+  to{ opacity:1; transform:none;} }
+.menu-item{ display:flex; align-items:center; gap:12px; width:100%;
+  padding:10px 12px; border:0; border-radius:var(--radius-s);
+  background:transparent; color:var(--text); font-size:14px; cursor:pointer;
+  text-align:left; }
+.menu-item:hover{ background:var(--bg-hover); }
+.menu-item .ic{ font-size:17px; width:22px; text-align:center; }
+.menu-item .tag{ margin-left:auto; font-size:11px; color:var(--text-3);
+  background:var(--bg-hover); padding:2px 8px; border-radius:20px; }
+.menu-sep{ height:1px; background:var(--border-soft); margin:6px 4px; }
+.menu-head{ padding:8px 12px 4px; font-size:11px; text-transform:uppercase;
+  letter-spacing:1px; color:var(--text-3); font-weight:600; }
+
+/* ==========================================================================
+   5. SIDEBAR (YouTube guide)
+   ========================================================================== */
+#sidebar{ width:var(--sidebar-w); flex:0 0 var(--sidebar-w);
+  overflow-y:auto; overflow-x:hidden; padding:12px;
+  background:var(--bg); transition:width var(--dur) var(--ease),
+  flex-basis var(--dur) var(--ease); }
+#app.rail #sidebar{ width:var(--sidebar-mini-w); flex-basis:var(--sidebar-mini-w);
+  padding:12px 4px; }
+.nav-sec{ margin-bottom:4px; }
+.nav-sec-title{ font-size:13px; font-weight:600; color:var(--text);
+  padding:8px 12px 4px; white-space:nowrap; overflow:hidden; }
+#app.rail .nav-sec-title{ display:none; }
+.nav-item{ display:flex; align-items:center; gap:20px; width:100%;
+  padding:0 12px; height:44px; border:0; border-radius:var(--radius-s);
+  background:transparent; color:var(--text); font-size:14px; cursor:pointer;
+  white-space:nowrap; overflow:hidden; text-align:left;
+  transition:background var(--dur) var(--ease); }
+.nav-item:hover{ background:var(--bg-hover); }
+.nav-item.active{ background:var(--bg-hover); font-weight:600; }
+.nav-item .ic{ font-size:20px; width:24px; text-align:center; flex:0 0 auto; }
+.nav-item .lbl{ overflow:hidden; text-overflow:ellipsis; }
+#app.rail .nav-item{ flex-direction:column; gap:6px; height:64px;
+  justify-content:center; padding:0 2px; font-size:10px; }
+#app.rail .nav-item .lbl{ font-size:10px; max-width:100%; }
+#app.rail .nav-sec hr{ display:none; }
+.nav-sec hr{ border:0; border-top:1px solid var(--border-soft); margin:10px 0; }
+.nav-foot{ padding:12px; font-size:12px; color:var(--text-3); line-height:1.7; }
+#app.rail .nav-foot{ display:none; }
+
+/* ==========================================================================
+   6. CHIPS (filter row)
+   ========================================================================== */
+#chipRow{ display:flex; gap:10px; overflow-x:auto; padding:14px 0 6px;
+  scrollbar-width:none; position:sticky; top:0; background:var(--bg);
+  z-index:20; }
+#chipRow::-webkit-scrollbar{ display:none; }
+.chip{ flex:0 0 auto; height:34px; padding:0 14px; border:0;
+  border-radius:10px; background:var(--bg-elev); color:var(--text);
+  font-size:14px; font-weight:500; cursor:pointer;
+  transition:background var(--dur), color var(--dur); }
+.chip:hover{ background:var(--bg-hover); }
+.chip.active{ background:var(--text); color:var(--bg); }
+
+/* ==========================================================================
+   7. SHELVES + VIDEO CARDS
+   ========================================================================== */
+.shelf{ margin:18px 0 8px; }
+.shelf-head{ display:flex; align-items:baseline; gap:12px; margin:0 0 12px; }
+.shelf-title{ font-size:19px; font-weight:700; margin:0; display:flex;
+  align-items:center; gap:8px; }
+.shelf-title .ic{ font-size:20px; }
+.shelf-sub{ font-size:13px; color:var(--text-2); }
+.shelf-link{ margin-left:auto; font-size:13px; font-weight:600; }
+.card-grid{ display:grid; gap:var(--card-gap);
+  grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); }
+@media (max-width:700px){
+  .card-grid{ grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); }
+}
+.vcard{ cursor:pointer; border-radius:var(--radius-m); padding:6px;
+  transition:background var(--dur) var(--ease), transform var(--dur) var(--ease);
+  position:relative; }
+.vcard:hover{ background:var(--bg-elev); }
+.vcard:active{ transform:scale(.985); }
+.vcard .thumb{ position:relative; aspect-ratio:16/9; border-radius:var(--radius-m);
+  overflow:hidden; background:var(--bg-elev); }
+.vcard .thumb img{ width:100%; height:100%; object-fit:cover;
+  transition:transform 300ms var(--ease); }
+.vcard:hover .thumb img{ transform:scale(1.04); }
+.badge-dur{ position:absolute; right:6px; bottom:6px; background:rgba(0,0,0,.82);
+  color:#fff; font-size:12px; font-weight:500; padding:2px 6px;
+  border-radius:6px; letter-spacing:.3px; }
+.badge-live{ position:absolute; left:6px; bottom:6px; background:var(--accent);
+  color:#fff; font-size:11px; font-weight:700; padding:2px 8px;
+  border-radius:6px; text-transform:uppercase; letter-spacing:.5px; }
+.vcard .meta{ display:flex; gap:10px; padding:10px 4px 6px; }
+.vcard .avatar{ width:36px; height:36px; border-radius:50%; flex:0 0 auto;
+  background:linear-gradient(135deg,var(--purple),var(--blue));
+  display:flex; align-items:center; justify-content:center; font-weight:700;
+  color:#fff; font-size:15px; }
+.vcard .t{ font-size:14.5px; font-weight:600; line-height:1.35; margin:0 0 4px;
+  display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical;
+  overflow:hidden; }
+.vcard .s{ font-size:12.5px; color:var(--text-2); margin:0; line-height:1.5;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.vcard .row-actions{ position:absolute; top:10px; right:10px; display:none; }
+.vcard:hover .row-actions{ display:flex; }
+.mini-btn{ width:32px; height:32px; border-radius:50%; border:0; cursor:pointer;
+  background:rgba(0,0,0,.6); color:#fff; font-size:15px;
+  display:inline-flex; align-items:center; justify-content:center; }
+.mini-btn:hover{ background:rgba(0,0,0,.85); }
+
+/* list layout for search results */
+.card-list{ display:flex; flex-direction:column; gap:4px; }
+.card-list .vcard{ display:flex; gap:14px; padding:8px; }
+.card-list .vcard .thumb{ width:min(360px,40%); flex:0 0 auto; }
+.card-list .vcard .meta{ padding:2px 0; }
+.card-list .vcard .t{ font-size:16px; }
+
+/* skeleton cards */
+.sk{ border-radius:var(--radius-m); overflow:hidden; }
+.sk .thumb{ aspect-ratio:16/9; border-radius:var(--radius-m); }
+.sk .ln{ height:14px; border-radius:6px; margin:10px 4px 0; }
+.sk .ln.w60{ width:60%; }
+.shimmer{ background:linear-gradient(100deg,var(--bg-elev) 40%,
+  var(--bg-hover) 50%,var(--bg-elev) 60%);
+  background-size:200% 100%; animation:shim 1.3s infinite linear; }
+@keyframes shim{ to{ background-position:-200% 0; } }
+
+/* empty states */
+.empty{ text-align:center; padding:64px 20px; color:var(--text-2); }
+.empty .big{ font-size:52px; margin-bottom:14px; }
+.empty h3{ color:var(--text); margin:0 0 8px; font-size:18px; }
+.empty p{ margin:0 0 18px; font-size:14px; max-width:420px;
+  margin-left:auto; margin-right:auto; }
+
+/* ==========================================================================
+   8. SECTION HEADERS / TOOLBARS
+   ========================================================================== */
+.page-head{ display:flex; align-items:center; gap:14px; padding:20px 0 6px;
+  flex-wrap:wrap; }
+.page-head h1{ font-size:24px; margin:0; font-weight:700; display:flex;
+  align-items:center; gap:10px; }
+.page-head .sub{ color:var(--text-2); font-size:13px; }
+.toolbar{ display:flex; align-items:center; gap:10px; margin-left:auto;
+  flex-wrap:wrap; }
+.btn{ display:inline-flex; align-items:center; gap:8px; height:38px;
+  padding:0 16px; border:1px solid var(--border); border-radius:20px;
+  background:var(--bg-elev); color:var(--text); font-size:14px; font-weight:600;
+  cursor:pointer; transition:background var(--dur), transform var(--dur),
+  border-color var(--dur); white-space:nowrap; }
+.btn:hover{ background:var(--bg-hover); }
+.btn:active{ transform:scale(.96); }
+.btn.primary{ background:var(--accent); border-color:var(--accent); color:#fff; }
+.btn.primary:hover{ background:var(--accent-hover); }
+.btn.blue{ background:var(--blue); border-color:var(--blue); color:#fff; }
+.btn.ghost{ background:transparent; }
+.btn.sm{ height:32px; padding:0 12px; font-size:13px; }
+.btn:disabled{ opacity:.45; cursor:not-allowed; transform:none; }
+.select{ height:38px; padding:0 12px; border:1px solid var(--border);
+  border-radius:20px; background:var(--bg-elev); color:var(--text);
+  font-size:13.5px; cursor:pointer; }
+.input{ height:40px; padding:0 14px; border:1px solid var(--border);
+  border-radius:var(--radius-s); background:var(--bg-2); color:var(--text);
+  font-size:14px; width:100%; outline:none; }
+.input:focus{ border-color:var(--blue); box-shadow:inset 0 0 0 1px var(--blue); }
+textarea.input{ height:auto; padding:10px 14px; resize:vertical; }
+.field{ margin:14px 0; }
+.field label{ display:block; font-size:13px; font-weight:600; margin-bottom:6px; }
+.field .hint{ font-size:12px; color:var(--text-2); margin-top:6px; }
+.hint{ font-size:12.5px; color:var(--text-2); margin:8px 0; }
+.switch{ position:relative; width:44px; height:24px; flex:0 0 auto; }
+.switch input{ opacity:0; width:100%; height:100%; position:absolute; margin:0;
+  cursor:pointer; z-index:2; }
+.switch .tr{ position:absolute; inset:0; border-radius:20px;
+  background:var(--bg-hover); transition:background var(--dur); }
+.switch .th{ position:absolute; top:3px; left:3px; width:18px; height:18px;
+  border-radius:50%; background:#fff; transition:left var(--dur) var(--ease); }
+.switch input:checked ~ .tr{ background:var(--blue); }
+.switch input:checked ~ .th{ left:23px; }
+.set-row{ display:flex; align-items:center; gap:14px; padding:14px 4px;
+  border-bottom:1px solid var(--border-soft); }
+.set-row .grow{ flex:1; min-width:0; }
+.set-row .t{ font-weight:600; font-size:14.5px; }
+.set-row .d{ font-size:12.5px; color:var(--text-2); margin-top:2px; }
+.seg{ display:inline-flex; flex-wrap:wrap; background:var(--bg-elev); border:1px solid
+  var(--border); border-radius:20px; padding:3px; gap:2px; }
+.seg button{ border:0; background:transparent; color:var(--text-2);
+  padding:7px 14px; border-radius:16px; font-size:13px; font-weight:600;
+  cursor:pointer; }
+.seg button.active{ background:var(--text); color:var(--bg); }
+
+/* ==========================================================================
+   9. TRACK (watch-style) VIEW
+   ========================================================================== */
+#trackWrap{ display:grid; grid-template-columns:minmax(0,1fr) 380px; gap:24px;
+  padding-top:20px; }
+@media (max-width:1100px){ #trackWrap{ grid-template-columns:1fr; } }
+#trackHero{ position:relative; border-radius:var(--radius-l); overflow:hidden;
+  background:var(--bg-elev); aspect-ratio:16/9; box-shadow:var(--shadow-2); }
+#trackHero img{ width:100%; height:100%; object-fit:cover; }
+#trackHero .scrim{ position:absolute; inset:0;
+  background:linear-gradient(180deg,transparent 55%,rgba(0,0,0,.72)); }
+#trackHero .hero-ctl{ position:absolute; left:0; right:0; bottom:0;
+  padding:18px 20px; display:flex; align-items:flex-end; gap:14px; }
+#trackHero .hero-ctl .grow{ flex:1; min-width:0; }
+#trackTitle{ font-size:22px; font-weight:700; margin:0 0 6px; line-height:1.3;
+  color:#fff; text-shadow:0 1px 8px rgba(0,0,0,.6); }
+#trackSub{ color:#e8e8e8; font-size:13.5px; margin:0;
+  text-shadow:0 1px 6px rgba(0,0,0,.6); }
+.hero-play{ width:64px; height:64px; border-radius:50%; border:0; cursor:pointer;
+  background:var(--accent); color:#fff; font-size:26px; flex:0 0 auto;
+  display:flex; align-items:center; justify-content:center;
+  box-shadow:var(--shadow-3); transition:transform var(--dur) var(--ease); }
+.hero-play:hover{ transform:scale(1.07); background:var(--accent-hover); }
+#trackActions{ display:flex; gap:10px; flex-wrap:wrap; margin:16px 0; }
+#trackDesc{ background:var(--bg-elev); border-radius:var(--radius-m);
+  padding:14px 16px; font-size:13.5px; color:var(--text-2); }
+#trackDesc b{ color:var(--text); }
+#upNext h3{ font-size:16px; margin:4px 0 12px; }
+.upnext-item{ display:flex; gap:10px; padding:6px; border-radius:var(--radius-s);
+  cursor:pointer; align-items:center; }
+.upnext-item:hover{ background:var(--bg-elev); }
+.upnext-item .thumb{ width:150px; flex:0 0 150px; aspect-ratio:16/9;
+  border-radius:var(--radius-s); overflow:hidden; background:var(--bg-elev);
+  position:relative; }
+.upnext-item .thumb img{ width:100%; height:100%; object-fit:cover; }
+.upnext-item .t{ font-size:13.5px; font-weight:600; margin:0 0 4px;
+  display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical;
+  overflow:hidden; }
+.upnext-item .s{ font-size:12px; color:var(--text-2); margin:0; }
+
+/* ==========================================================================
+   10. DOWNLOADS
+   ========================================================================== */
+.job{ background:var(--bg-elev); border:1px solid var(--border-soft);
+  border-radius:var(--radius-m); padding:14px 16px; margin:10px 0;
+  display:flex; gap:14px; align-items:center; animation:viewIn var(--dur)
+  var(--ease); }
+.job .thumb{ width:120px; flex:0 0 120px; aspect-ratio:16/9;
+  border-radius:var(--radius-s); overflow:hidden; background:var(--bg-hover); }
+.job .thumb img{ width:100%; height:100%; object-fit:cover; }
+.job .grow{ flex:1; min-width:0; }
+.job .t{ font-weight:600; font-size:14.5px; margin:0 0 4px;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.job .s{ font-size:12.5px; color:var(--text-2); margin:0 0 8px; }
+.pbar{ height:7px; border-radius:6px; background:var(--bg-hover);
+  overflow:hidden; position:relative; }
+.pbar > i{ display:block; height:100%; border-radius:6px;
+  background:linear-gradient(90deg,var(--accent),#ff6a00);
+  transition:width 400ms var(--ease); }
+.pbar.indet > i{ width:35% !important; animation:indet 1.2s infinite var(--ease); }
+@keyframes indet{ 0%{ margin-left:-35%; } 100%{ margin-left:100%; } }
+.job .pct{ font-size:12px; font-weight:700; color:var(--text-2);
+  min-width:44px; text-align:right; }
+.pill{ display:inline-flex; align-items:center; gap:6px; font-size:11.5px;
+  font-weight:700; padding:3px 10px; border-radius:20px;
+  text-transform:uppercase; letter-spacing:.4px; }
+.pill.queued{ background:var(--bg-hover); color:var(--text-2); }
+.pill.downloading{ background:var(--blue-soft); color:var(--blue); }
+.pill.sending{ background:var(--purple-soft); color:var(--purple); }
+.pill.done{ background:var(--green-soft); color:var(--green); }
+.pill.error{ background:rgba(255,0,51,.14); color:#ff5c7a; }
+.job .err{ font-size:12.5px; color:#ff5c7a; margin:6px 0 0; }
+
+/* global download tray (bottom) */
+#tray{ position:fixed; left:0; right:0; bottom:0; z-index:70;
+  background:var(--bg-elev); border-top:1px solid var(--border);
+  box-shadow:0 -8px 30px rgba(0,0,0,.35);
+  transform:translateY(110%); transition:transform 250ms var(--ease); }
+#tray.show{ transform:none; }
+#trayInner{ max-width:1754px; margin:0 auto; padding:10px 24px 14px; }
+#trayHead{ display:flex; align-items:center; gap:10px; margin-bottom:8px; }
+#trayHead .t{ font-weight:700; font-size:14px; }
+#trayHead .c{ font-size:12px; color:var(--text-2); }
+#trayJobs{ display:flex; flex-direction:column; gap:8px; max-height:180px;
+  overflow-y:auto; }
+.tray-job{ display:flex; align-items:center; gap:10px; font-size:13px; }
+.tray-job .t{ flex:1; min-width:0; white-space:nowrap; overflow:hidden;
+  text-overflow:ellipsis; }
+.tray-job .pbar{ flex:0 0 140px; }
+
+/* ==========================================================================
+   11. ACCOUNT / COOKIES
+   ========================================================================== */
+.card{ background:var(--bg-elev); border:1px solid var(--border-soft);
+  border-radius:var(--radius-l); padding:22px; margin:14px 0;
+  box-shadow:var(--shadow-1); }
+.card h2{ margin:0 0 6px; font-size:18px; display:flex; align-items:center;
+  gap:10px; }
+.card p{ color:var(--text-2); font-size:13.5px; margin:8px 0; }
+.status-line{ display:flex; align-items:center; gap:12px; padding:12px 14px;
+  border-radius:var(--radius-m); background:var(--bg-2);
+  border:1px solid var(--border-soft); margin:12px 0; }
+.dot{ width:11px; height:11px; border-radius:50%; flex:0 0 auto; }
+.dot.on{ background:var(--green); box-shadow:0 0 10px var(--green); }
+.dot.off{ background:var(--text-3); }
+.steps{ margin:14px 0; padding-left:2px; }
+.step{ display:flex; gap:14px; margin:12px 0; }
+.step .n{ width:28px; height:28px; border-radius:50%; flex:0 0 auto;
+  background:var(--bg-hover); display:flex; align-items:center;
+  justify-content:center; font-weight:700; font-size:13px; }
+.step .b{ font-size:13.5px; }
+.step .b b{ display:block; margin-bottom:2px; }
+.step .b span{ color:var(--text-2); }
+kbd{ background:var(--bg-hover); border:1px solid var(--border);
+  border-bottom-width:2px; border-radius:6px; padding:1px 7px; font-size:12px;
+  font-family:inherit; }
+
+/* ==========================================================================
+   12. HISTORY / PLAYLISTS
+   ========================================================================== */
+.hist-item,.pl-track{ display:flex; align-items:center; gap:12px; padding:8px;
+  border-radius:var(--radius-s); cursor:pointer; }
+.hist-item:hover,.pl-track:hover{ background:var(--bg-elev); }
+.hist-item .thumb,.pl-track .thumb{ width:120px; flex:0 0 120px;
+  aspect-ratio:16/9; border-radius:var(--radius-s); overflow:hidden;
+  background:var(--bg-elev); position:relative; }
+.hist-item .thumb img,.pl-track .thumb img{ width:100%; height:100%;
+  object-fit:cover; }
+.hist-item .grow,.pl-track .grow{ flex:1; min-width:0; }
+.hist-item .t,.pl-track .t{ font-weight:600; font-size:14px; margin:0 0 3px;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.hist-item .s,.pl-track .s{ font-size:12.5px; color:var(--text-2); margin:0; }
+.pl-card{ background:var(--bg-elev); border:1px solid var(--border-soft);
+  border-radius:var(--radius-m); padding:16px; cursor:pointer;
+  transition:transform var(--dur) var(--ease), box-shadow var(--dur); }
+.pl-card:hover{ transform:translateY(-2px); box-shadow:var(--shadow-2); }
+.pl-card .t{ font-weight:700; font-size:15px; margin:0 0 4px; }
+.pl-card .s{ font-size:12.5px; color:var(--text-2); margin:0; }
+.pl-grid{ display:grid; gap:14px;
+  grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); }
+
+/* ==========================================================================
+   13. DIALOGS / TOASTS / PALETTE / TOOLTIP / BANNER
+   ========================================================================== */
+#scrim{ position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:100;
+  display:flex; align-items:center; justify-content:center; padding:20px;
+  animation:fadeIn 150ms var(--ease); }
+@keyframes fadeIn{ from{ opacity:0; } }
+.dialog{ background:var(--bg-elev); border:1px solid var(--border);
+  border-radius:var(--radius-l); box-shadow:var(--shadow-3);
+  width:min(520px,100%); max-height:86dvh; display:flex; flex-direction:column;
+  animation:dlgIn 180ms var(--ease); }
+@keyframes dlgIn{ from{ opacity:0; transform:translateY(10px) scale(.98); } }
+.dialog.wide{ width:min(720px,100%); }
+.dlg-head{ display:flex; align-items:center; gap:10px; padding:18px 20px 0; }
+.dlg-head h2{ margin:0; font-size:18px; flex:1; }
+.dlg-body{ padding:14px 20px; overflow-y:auto; font-size:14px; }
+.dlg-foot{ display:flex; gap:10px; justify-content:flex-end; padding:6px 20px
+  20px; flex-wrap:wrap; }
+#toasts{ position:fixed; bottom:24px; left:50%; transform:translateX(-50%);
+  z-index:120; display:flex; flex-direction:column; gap:10px;
+  align-items:center; width:min(480px,calc(100% - 32px)); }
+.toast{ background:var(--bg-elev-2); color:var(--text);
+  border:1px solid var(--border); border-radius:var(--radius-m);
+  padding:12px 18px; font-size:13.5px; box-shadow:var(--shadow-3);
+  display:flex; align-items:center; gap:10px; max-width:100%;
+  animation:toastIn 200ms var(--ease); }
+@keyframes toastIn{ from{ opacity:0; transform:translateY(12px); } }
+.toast.out{ opacity:0; transform:translateY(8px);
+  transition:opacity 200ms, transform 200ms; }
+#palette{ position:fixed; inset:0; z-index:110; background:rgba(0,0,0,.55);
+  display:flex; justify-content:center; padding:12dvh 20px 20px;
+  animation:fadeIn 120ms var(--ease); align-items:flex-start; }
+#paletteBox{ width:min(600px,100%); background:var(--bg-elev);
+  border:1px solid var(--border); border-radius:var(--radius-l);
+  box-shadow:var(--shadow-3); overflow:hidden;
+  animation:dlgIn 150ms var(--ease); }
+#paletteInput{ width:100%; height:52px; border:0; border-bottom:1px solid
+  var(--border-soft); background:transparent; color:var(--text);
+  font-size:16px; padding:0 20px; outline:none; }
+#paletteList{ max-height:340px; overflow-y:auto; padding:8px; }
+.pal-item{ display:flex; align-items:center; gap:12px; width:100%;
+  padding:10px 12px; border:0; border-radius:var(--radius-s);
+  background:transparent; color:var(--text); font-size:14px; cursor:pointer;
+  text-align:left; }
+.pal-item.active{ background:var(--bg-hover); }
+.pal-item .ic{ font-size:17px; }
+.pal-item .hint{ margin-left:auto; font-size:11.5px; color:var(--text-3); }
+#tooltip{ position:fixed; z-index:130; background:var(--bg-elev-2);
+  color:var(--text); border:1px solid var(--border); font-size:12px;
+  padding:6px 10px; border-radius:8px; pointer-events:none;
+  box-shadow:var(--shadow-2); white-space:nowrap; }
+#authBanner{ display:flex; align-items:center; gap:12px; margin:14px 0 0;
+  padding:12px 16px; border-radius:var(--radius-m);
+  background:var(--amber-soft); border:1px solid rgba(245,166,35,.4);
+  font-size:13.5px; }
+#authBanner .ic{ font-size:20px; }
+#authBanner b{ font-weight:700; }
+
+/* ==========================================================================
+   14. HOME EXTRAS
+   ========================================================================== */
+#heroCard{ border-radius:var(--radius-xl); overflow:hidden; position:relative;
+  margin:18px 0 6px; background:linear-gradient(120deg,#1a0533,#3d0a2e 45%,
+  #0a1a3d); border:1px solid var(--border-soft); }
+#heroCard .in{ padding:34px 30px; position:relative; z-index:2; }
+#heroCard h2{ margin:0 0 8px; font-size:26px; font-weight:800;
+  letter-spacing:-.3px; }
+#heroCard p{ margin:0 0 18px; color:#d9d9e3; font-size:14.5px; max-width:520px; }
+#heroCard .deco{ position:absolute; right:-40px; top:-40px; font-size:190px;
+  opacity:.16; transform:rotate(-12deg); pointer-events:none; }
+.quick-grid{ display:grid; gap:12px;
+  grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); margin:14px 0; }
+.quick{ display:flex; align-items:center; gap:12px; padding:12px 14px;
+  background:var(--bg-elev); border:1px solid var(--border-soft);
+  border-radius:var(--radius-m); cursor:pointer; font-size:13.5px;
+  font-weight:600; transition:transform var(--dur) var(--ease),
+  background var(--dur); border:0; color:var(--text); text-align:left; }
+.quick:hover{ background:var(--bg-hover); transform:translateY(-2px); }
+.quick .ic{ font-size:22px; }
+
+/* ==========================================================================
+   15. RESPONSIVE
+   ========================================================================== */
+@media (max-width:900px){
+  :root{ --sidebar-w:0px; }
+  #sidebar{ position:fixed; left:0; top:var(--header-h); bottom:0; z-index:65;
+    width:min(300px,84vw); flex-basis:auto; transform:translateX(-105%);
+    transition:transform 220ms var(--ease); box-shadow:var(--shadow-3);
+    border-right:1px solid var(--border); }
+  #app.nav-open #sidebar{ transform:none; }
+  #app.nav-open #navScrim{ display:block; }
+  #viewScroll{ padding:0 12px 140px; }
+  #btnSearch{ width:52px; }
+  #mastRight .hide-m{ display:none; }
+  .brand-name{ display:none; }
+  #trackWrap{ padding-top:12px; }
+}
+#navScrim{ display:none; position:fixed; inset:var(--header-h) 0 0 0;
+  background:rgba(0,0,0,.5); z-index:64; }
+@media (min-width:901px){ #btnMenu{ display:none; } }
+@media (max-width:560px){
+  .card-list .vcard .thumb{ width:42%; }
+  #searchForm{ width:100%; }
+  #suggestBox{ right:52px; }
+  .job{ flex-wrap:wrap; }
+  .job .thumb{ width:100%; flex-basis:100%; aspect-ratio:16/7; }
+}
+/* ================= 16. PLAYER ================= */
+#playerScrim{ position:fixed; inset:0; z-index:105; background:rgba(0,0,0,.72);
+  display:flex; align-items:center; justify-content:center; padding:20px;
+  animation:fadeIn 150ms var(--ease); }
+.player-box{ width:min(860px,100%); background:var(--bg-elev);
+  border:1px solid var(--border); border-radius:var(--radius-l);
+  box-shadow:var(--shadow-3); overflow:hidden; animation:dlgIn 180ms var(--ease); }
+.player-video{ aspect-ratio:16/9; background:#000; }
+.player-video iframe{ width:100%; height:100%; border:0; display:block; }
+.player-meta{ display:flex; align-items:center; gap:12px; padding:14px 16px; }
+.player-meta .grow{ flex:1; min-width:0; }
+.player-meta .pt{ margin:0; font-weight:700; font-size:15px;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.player-meta .ps{ margin:2px 0 0; font-size:12.5px; color:var(--text-2);
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+@media (max-width:700px){
+  #playerScrim{ padding:0; align-items:flex-end; }
+  .player-box{ border-radius:var(--radius-l) var(--radius-l) 0 0; }
+}
+.hero-play.dl{ background:var(--bg-elev-2); }
+.hero-play.dl:hover{ background:var(--bg-hover); }
+.age-check{ display:flex; gap:12px; align-items:flex-start; margin:16px 0;
+  font-size:14px; font-weight:600; cursor:pointer; }
+.age-check input{ width:20px; height:20px; margin-top:1px; flex:0 0 auto;
+  accent-color:var(--accent); cursor:pointer; }
+/* ================= 17. OVERLAP FIXES ================= */
+#app.tray-open #viewScroll{ padding-bottom:340px; }
+#app.tray-open #toasts{ bottom:300px; }
+@media (hover:none){ .vcard .row-actions{ display:none !important; } }
+@media (max-width:900px){
+  #chipRow{ margin:0 -12px; padding-left:12px; padding-right:12px; }
+}
+</style>
+</head>
+
+<body>
+<div class="ambient" aria-hidden="true"><i></i><i></i></div>
+<div id="app">
+  <!-- ================= MASTHEAD ================= -->
+  <header id="masthead">
+    <button class="icon-btn" id="btnMenu" aria-label="Menu">☰</button>
+    <button class="brand" id="brandHome" aria-label="YTMUSIC Studio home">
+      <span class="brand-mark" aria-hidden="true"><svg class="eqlogo" viewBox="0 0 32 32"><defs><linearGradient id="eqg" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#ff0033"/><stop offset="1" stop-color="#ff6a00"/></linearGradient></defs><rect x="4" y="6" width="4.6" height="20" rx="2.3" fill="url(#eqg)"/><rect x="10.2" y="6" width="4.6" height="20" rx="2.3" fill="url(#eqg)"/><rect x="16.4" y="6" width="4.6" height="20" rx="2.3" fill="url(#eqg)"/><rect x="22.6" y="6" width="4.6" height="20" rx="2.3" fill="url(#eqg)"/></svg></span>
+      <span class="brand-name">YTMUSIC<small>STUDIO</small></span>
+    </button>
+    <div id="searchWrap">
+      <form id="searchForm" role="search" autocomplete="off">
+        <div id="searchBox">
+          <input id="searchInput" type="text" maxlength="120"
+                 data-i18n-ph="searchPh" placeholder="Search songs, artists…"
+                 aria-label="Search YouTube">
+          <button type="button" id="searchClear" aria-label="Clear search">✕</button>
+        </div>
+        <button type="submit" id="btnSearch" aria-label="Search">🔍</button>
+        <div id="suggestBox" hidden role="listbox" aria-label="Suggestions"></div>
+      </form>
+    </div>
+    <div id="mastRight">
+      <button class="icon-btn hide-m" id="btnPalette" aria-label="Command palette"
+              data-tip="Command palette (Ctrl+K)">⌘</button>
+      <button class="icon-btn hide-m" id="btnTheme" aria-label="Toggle theme"
+              data-tip="Toggle theme">🌙</button>
+      <button class="icon-btn hide-m" id="btnLang" aria-label="Language"
+              data-tip="भाषा / Language">अ</button>
+      <button id="avatarBtn" aria-label="Account">♪</button>
+    </div>
+  </header>
+
+  <div id="shell">
+    <!-- ================= SIDEBAR ================= -->
+    <div id="navScrim"></div>
+    <aside id="sidebar" aria-label="Main navigation">
+      <nav class="nav-sec" id="navMain">
+        <button class="nav-item" data-route="#/"><span class="ic">🏠</span><span class="lbl" data-i18n="navHome">Home</span></button>
+        <button class="nav-item" data-route="#/downloads"><span class="ic">📥</span><span class="lbl" data-i18n="navDownloads">Downloads</span></button>
+        <button class="nav-item" data-route="#/history"><span class="ic">🕘</span><span class="lbl" data-i18n="navHistory">History</span></button>
+        <button class="nav-item" data-route="#/playlists"><span class="ic">🎶</span><span class="lbl" data-i18n="navPlaylists">Playlists</span></button>
+        <button class="nav-item" data-route="#/adult"><span class="ic">🔞</span><span class="lbl" data-i18n="navAdult">18+</span></button>
+      </nav>
+      <nav class="nav-sec"><hr>
+        <div class="nav-sec-title" data-i18n="navYou">You</div>
+        <button class="nav-item" data-route="#/account"><span class="ic">👤</span><span class="lbl" data-i18n="navAccount">Account</span></button>
+        <button class="nav-item" data-route="#/settings"><span class="ic">⚙️</span><span class="lbl" data-i18n="navSettings">Settings</span></button>
+      </nav>
+      <nav class="nav-sec"><hr>
+        <div class="nav-sec-title" data-i18n="navHelp">Help</div>
+        <button class="nav-item" id="navShortcuts"><span class="ic">⌨️</span><span class="lbl" data-i18n="navShortcuts">Shortcuts</span></button>
+        <button class="nav-item" id="navAbout"><span class="ic">ℹ️</span><span class="lbl" data-i18n="navAbout">About</span></button>
+      </nav>
+      <div class="nav-foot">
+        <div>YTMUSIC Studio · Mini App</div>
+        <div data-i18n="navFoot">Files are delivered to your Telegram chat.</div>
+      </div>
+    </aside>
+
+    <!-- ================= MAIN ================= -->
+    <div id="main">
+      <div id="viewScroll">
+
+        <!-- HOME -->
+        <section class="view" id="view-home">
+          <div id="authBanner" hidden>
+            <span class="ic">🔒</span>
+            <div><b data-i18n="authTitle">You're browsing outside Telegram.</b>
+            <span data-i18n="authBody">Open this app from the bot's button to search &amp; download.</span></div>
+          </div>
+          <div id="heroCard">
+            <div class="deco">🎧</div>
+            <div class="in">
+              <h2 data-i18n="heroTitle">Your music, one tap away.</h2>
+              <p data-i18n="heroSub">Search YouTube, pick MP3 or MP4, and the song lands straight in your Telegram chat — in studio quality.</p>
+              <div style="display:flex;gap:10px;flex-wrap:wrap">
+                <button class="btn primary" id="heroSearch">🔍 <span data-i18n="heroCta1">Search music</span></button>
+                <button class="btn" id="heroAccount">👤 <span data-i18n="heroCta2">Link YouTube account</span></button>
+              </div>
+            </div>
+          </div>
+          <div class="quick-grid" id="quickGrid"></div>
+          <div id="chipRow" role="tablist" aria-label="Quick searches"></div>
+          <div class="shelf" id="recentShelf" hidden>
+            <div class="shelf-head"><h2 class="shelf-title"><span class="ic">🕘</span><span data-i18n="recentlyPlayed">Recently played</span></h2>
+              <button class="btn sm ghost shelf-link" id="recentAll">→</button></div>
+            <div class="card-grid" id="recentGrid"></div>
+          </div>
+          <div class="shelf">
+            <div class="shelf-head"><h2 class="shelf-title"><span class="ic">🔥</span><span data-i18n="trending">Trending searches</span></h2></div>
+            <div class="card-grid" id="trendGrid"></div>
+          </div>
+          <div id="moreShelves"></div>
+        </section>
+
+        <!-- SEARCH -->
+        <section class="view" id="view-search" hidden>
+          <div class="page-head">
+            <h1>🔍 <span id="searchTitle">Results</span></h1>
+            <span class="sub" id="searchMeta"></span>
+            <div class="toolbar">
+              <select class="select" id="sortSel" aria-label="Sort">
+                <option value="rel" data-i18n="sortRel">Most relevant</option>
+                <option value="durAsc" data-i18n="sortDurAsc">Shortest first</option>
+                <option value="durDesc" data-i18n="sortDurDesc">Longest first</option>
+                <option value="az" data-i18n="sortAz">Title A–Z</option>
+              </select>
+              <div class="seg" role="group" aria-label="Layout">
+                <button id="layGrid" class="active" aria-label="Grid view">▦</button>
+                <button id="layList" aria-label="List view">☰</button>
+              </div>
+            </div>
+          </div>
+          <div id="resultsSkel" class="card-grid" hidden></div>
+          <div id="resultsGrid" class="card-grid"></div>
+          <div class="empty" id="resultsEmpty" hidden>
+            <div class="big">🔎</div>
+            <h3 data-i18n="noResults">No results found</h3>
+            <p data-i18n="noResultsSub">Try a different spelling, or add the artist name.</p>
+          </div>
+          <div class="empty" id="resultsError" hidden>
+            <div class="big">⚠️</div>
+            <h3 data-i18n="searchFailed">Search failed</h3>
+            <p id="searchErrMsg"></p>
+            <button class="btn" id="btnRetrySearch">↻ <span data-i18n="retry">Retry</span></button>
+          </div>
+          <div class="empty" id="resultsLocked" hidden>
+            <div class="big">🔒</div>
+            <h3 data-i18n="lockedTitle">Search needs Telegram</h3>
+            <p data-i18n="lockedSub">This page must be opened from the bot's 🎵 button — that's where your secure login lives.</p>
+          </div>
+        </section>
+
+        <!-- TRACK -->
+        <section class="view" id="view-track" hidden>
+          <div id="trackWrap">
+            <div>
+              <div id="trackHero">
+                <img id="trackImg" alt="">
+                <div class="scrim"></div>
+                <div class="hero-ctl">
+                  <button class="hero-play" id="heroPlay" aria-label="Play">▶</button>
+                  <button class="hero-play dl" id="heroDl" aria-label="Download">⬇</button>
+                  <div class="grow">
+                    <h2 id="trackTitle"></h2>
+                    <p id="trackSub"></p>
+                  </div>
+                </div>
+              </div>
+              <div id="trackActions">
+                <button class="btn primary" id="btnDlAudio">🎧 <span data-i18n="dlAudio">Download MP3</span></button>
+                <button class="btn" id="btnDlVideo">🎬 <span data-i18n="dlVideo">Download MP4</span></button>
+                <button class="btn ghost" id="btnAddPl">➕ <span data-i18n="addPl">Playlist</span></button>
+                <button class="btn ghost" id="btnShare">🔗 <span data-i18n="share">Share</span></button>
+              </div>
+              <div id="trackDesc"></div>
+            </div>
+            <aside id="upNext">
+              <h3 data-i18n="upNext">Up next</h3>
+              <div id="upNextList"></div>
+            </aside>
+          </div>
+        </section>
+
+        <!-- DOWNLOADS -->
+        <section class="view" id="view-downloads" hidden>
+          <div class="page-head">
+            <h1>📥 <span data-i18n="dlTitle">Downloads</span></h1>
+            <span class="sub" data-i18n="dlSub">Songs are delivered to your Telegram chat when ready.</span>
+            <div class="toolbar">
+              <button class="btn sm ghost" id="btnClearDone">🧹 <span data-i18n="clearDone">Clear finished</span></button>
+            </div>
+          </div>
+          <div id="jobsList"></div>
+          <div class="empty" id="jobsEmpty" hidden>
+            <div class="big">📭</div>
+            <h3 data-i18n="noJobs">Nothing downloading</h3>
+            <p data-i18n="noJobsSub">Search for a song and hit Download — it will appear here with live progress.</p>
+            <button class="btn primary" id="jobsGoSearch">🔍 <span data-i18n="heroCta1">Search music</span></button>
+          </div>
+        </section>
+
+        <!-- HISTORY -->
+        <section class="view" id="view-history" hidden>
+          <div class="page-head">
+            <h1>🕘 <span data-i18n="histTitle">History</span></h1>
+            <div class="toolbar">
+              <button class="btn sm ghost" id="btnClearHist">🧹 <span data-i18n="clearAll">Clear all</span></button>
+            </div>
+          </div>
+          <div id="histList"></div>
+          <div class="empty" id="histEmpty" hidden>
+            <div class="big">🕘</div>
+            <h3 data-i18n="noHist">No history yet</h3>
+            <p data-i18n="noHistSub">Songs you open will show up here for quick replay.</p>
+          </div>
+        </section>
+
+        <!-- PLAYLISTS -->
+        <section class="view" id="view-playlists" hidden>
+          <div class="page-head">
+            <h1>🎶 <span data-i18n="plTitle">Playlists</span></h1>
+            <div class="toolbar">
+              <button class="btn sm primary" id="btnNewPl">➕ <span data-i18n="newPl">New playlist</span></button>
+            </div>
+          </div>
+          <div id="plHome">
+            <div class="pl-grid" id="plGrid"></div>
+            <div class="empty" id="plEmpty" hidden>
+              <div class="big">🎶</div>
+              <h3 data-i18n="noPl">No playlists yet</h3>
+              <p data-i18n="noPlSub">Create one, then add songs from any track page.</p>
+            </div>
+          </div>
+          <div id="plDetail" hidden>
+            <button class="btn sm ghost" id="plBack">← <span data-i18n="back">Back</span></button>
+            <div class="page-head"><h1 id="plName"></h1><span class="sub" id="plMeta"></span>
+              <div class="toolbar">
+                <button class="btn sm" id="plDlAll">⬇ <span data-i18n="dlAll">Download all</span></button>
+                <button class="btn sm ghost" id="plRename">✏️</button>
+                <button class="btn sm ghost" id="plDelete">🗑️</button>
+              </div>
+            </div>
+            <div id="plTracks"></div>
+          </div>
+        </section>
+
+        <!-- ADULT (18+ gated) -->
+        <section class="view" id="view-adult" hidden></section>
+
+        <!-- ACCOUNT -->
+        <section class="view" id="view-account" hidden>
+          <div class="page-head"><h1>👤 <span data-i18n="accTitle">Account</span></h1></div>
+          <div class="card">
+            <h2>🔗 <span data-i18n="ckTitle">YouTube account</span></h2>
+            <p data-i18n="ckWhy">Linking your account unlocks age-restricted videos and your Premium quality. Your cookies never leave this server.</p>
+            <div class="status-line"><span class="dot off" id="ckDot"></span>
+              <div><b id="ckState">…</b><div class="hint" style="font-size:12px;color:var(--text-2)" id="ckHint"></div></div>
+              <button class="btn sm ghost" id="btnCkRefresh" style="margin-left:auto">↻</button>
+            </div>
+            <div class="field">
+              <label for="ckFile" data-i18n="ckFileLbl">cookies.txt file</label>
+              <input class="input" type="file" id="ckFile" accept=".txt,text/plain">
+              <div class="hint" data-i18n="ckFileHint">Exported from your browser while logged in to youtube.com</div>
+            </div>
+            <div style="display:flex;gap:10px;flex-wrap:wrap">
+              <button class="btn primary" id="btnCkUpload">⬆ <span data-i18n="ckUpload">Link account</span></button>
+              <button class="btn ghost" id="btnCkUnlink" hidden>🗑️ <span data-i18n="ckUnlink">Unlink</span></button>
+            </div>
+          </div>
+          <div class="card">
+            <h2>❓ <span data-i18n="ckHowTitle">How to get cookies.txt</span></h2>
+            <div class="steps" id="ckSteps"></div>
+          </div>
+          <div class="card">
+            <h2>🛡️ <span data-i18n="ckSafeTitle">Is it safe?</span></h2>
+            <p data-i18n="ckSafe">Yes — the file is stored with private permissions, used only to fetch videos as you, and you can unlink anytime. Never share your cookies.txt with anyone else.</p>
+          </div>
+        </section>
+
+        <!-- SETTINGS -->
+        <section class="view" id="view-settings" hidden>
+          <div class="page-head"><h1>⚙️ <span data-i18n="setTitle">Settings</span></h1></div>
+          <div class="card" style="padding:8px 22px">
+            <div class="set-row"><div class="grow">
+                <div class="t" data-i18n="setTheme">Theme</div>
+                <div class="d" data-i18n="setThemeD">6 themes — Dark, Light, AMOLED, Neon, Sunset, Ocean</div></div>
+              <div class="seg" id="segTheme" role="group" aria-label="Theme">
+                <button data-v="dark">🌙 <span data-i18n="thDark">Dark</span></button>
+                <button data-v="light">☀️ <span data-i18n="thLight">Light</span></button>
+                <button data-v="amoled">🖤 <span data-i18n="thAmoled">AMOLED</span></button>
+                <button data-v="neon">🌆 <span data-i18n="thNeon">Neon</span></button>
+                <button data-v="sunset">🌅 <span data-i18n="thSunset">Sunset</span></button>
+                <button data-v="ocean">🌊 <span data-i18n="thOcean">Ocean</span></button>
+              </div></div>
+            <div class="set-row"><div class="grow">
+                <div class="t" data-i18n="setQuality">Default download quality</div>
+                <div class="d" data-i18n="setQualityD">Used when you tap quick-download</div></div>
+              <select class="select" id="setQuality">
+                <option value="mp3_320">MP3 · 320 kbps</option>
+                <option value="mp3_128">MP3 · 128 kbps</option>
+                <option value="mp4_720">MP4 · 720p video</option>
+              </select></div>
+            <div class="set-row"><div class="grow">
+                <div class="t" data-i18n="setLang">Language · भाषा</div>
+                <div class="d">English / हिन्दी</div></div>
+              <div class="seg" id="segLang" role="group" aria-label="Language">
+                <button data-v="en">EN</button><button data-v="hi">हिं</button>
+              </div></div>
+            <div class="set-row"><div class="grow">
+                <div class="t" data-i18n="setCompact">Compact layout</div>
+                <div class="d" data-i18n="setCompactD">Tighter spacing, more videos per screen</div></div>
+              <label class="switch"><input type="checkbox" id="setCompact"><span class="tr"></span><span class="th"></span></label></div>
+            <div class="set-row"><div class="grow">
+                <div class="t" data-i18n="setMotion">Animations</div>
+                <div class="d" data-i18n="setMotionD">Turn off if you prefer a calmer UI</div></div>
+              <label class="switch"><input type="checkbox" id="setMotion" checked><span class="tr"></span><span class="th"></span></label></div>
+            <div class="set-row"><div class="grow">
+                <div class="t" data-i18n="setRail">Mini sidebar</div>
+                <div class="d" data-i18n="setRailD">Icon-only navigation rail</div></div>
+              <label class="switch"><input type="checkbox" id="setRail"><span class="tr"></span><span class="th"></span></label></div>
+          </div>
+          <div class="card">
+            <h2>ℹ️ <span data-i18n="aboutTitle">About</span></h2>
+            <p><b>YTMUSIC Studio</b> · <span data-i18n="aboutBody">Telegram Mini App — search YouTube and get studio-quality MP3/MP4 delivered to your chat.</span></p>
+            <p style="font-size:12.5px">v3.0 “mega” · <span id="aboutBuild"></span></p>
+          </div>
+        </section>
+
+      </div><!-- /viewScroll -->
+    </div><!-- /main -->
+  </div><!-- /shell -->
+
+  <!-- download tray -->
+  <div id="tray" hidden>
+    <div id="trayInner">
+      <div id="trayHead">
+        <span class="t">📥 <span data-i18n="trayTitle">Downloads</span></span>
+        <span class="c" id="trayCount"></span>
+        <button class="btn sm ghost" id="trayOpen" style="margin-left:auto">↗ <span data-i18n="open">Open</span></button>
+        <button class="icon-btn" id="trayHide" aria-label="Hide" style="width:32px;height:32px">✕</button>
+      </div>
+      <div id="trayJobs"></div>
+    </div>
+  </div>
+</div><!-- /app -->
+
+<div id="playerScrim" hidden><div class="player-box" role="dialog" aria-modal="true">
+  <div class="player-video"><iframe id="playerFrame" title="Player"
+    allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe></div>
+  <div class="player-meta"><div class="grow"><p class="pt" id="playerTitle"></p>
+    <p class="ps" id="playerSub"></p></div>
+    <button class="btn primary sm" id="playerDl">⬇ MP3</button>
+    <button class="icon-btn" id="playerClose" aria-label="Close">✕</button></div>
+</div></div>
+<div id="toasts" aria-live="polite"></div>
+<div id="tooltip" hidden></div>
+<div id="palette" hidden>
+  <div id="paletteBox" role="dialog" aria-label="Command palette">
+    <input id="paletteInput" data-i18n-ph="palPh" placeholder="Type a command or search…">
+    <div id="paletteList" role="listbox"></div>
+  </div>
+</div>
+<div id="scrim" hidden><div class="dialog" id="dialogBox" role="dialog" aria-modal="true">
+  <div class="dlg-head"><h2 id="dlgTitle"></h2>
+    <button class="icon-btn" id="dlgClose" aria-label="Close">✕</button></div>
+  <div class="dlg-body" id="dlgBody"></div>
+  <div class="dlg-foot" id="dlgFoot"></div>
+</div></div>
+
+<script>
+(function(){
+"use strict";
+/* ==========================================================================
+   YTMUSIC Studio — app logic
+   Sections: util · i18n · tg · theme · api · store · router · views
+             (home/search/track/downloads/history/playlists/account/settings)
+             · components · palette · shortcuts · boot
+   ========================================================================== */
+
+/* ------------------------------- UTIL ---------------------------------- */
+var $ = function(s, r){ return (r||document).querySelector(s); };
+var $$ = function(s, r){ return Array.prototype.slice.call((r||document).querySelectorAll(s)); };
+function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g, function(c){
+  return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]; }); }
+function clamp(n,a,b){ return Math.max(a, Math.min(b, n)); }
+function debounce(fn, ms){ var t=null; return function(){
+  var a=arguments, self=this; clearTimeout(t); t=setTimeout(function(){ fn.apply(self,a); }, ms); }; }
+function uid(p){ return (p||"id")+"_"+Date.now().toString(36)+Math.random().toString(36).slice(2,8); }
+function fmtClock(ts){ var d=new Date(ts); return d.toLocaleDateString() + " " +
+  d.toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"}); }
+function timeAgo(ts){ var s=Math.floor((Date.now()-ts)/1000);
+  if(s<60) return t("justNow"); var m=Math.floor(s/60);
+  if(m<60) return m+t("minAgo"); var h=Math.floor(m/60);
+  if(h<24) return h+t("hrAgo"); var d=Math.floor(h/24);
+  if(d<30) return d+t("dayAgo"); return fmtClock(ts); }
+/* "3:45" -> seconds (for sorting); unknown -> Infinity for asc */
+function durSecs(d){ if(!d) return 1e9; var p=String(d).split(":").map(Number);
+  if(p.some(isNaN)) return 1e9; var s=0; for(var i=0;i<p.length;i++) s=s*60+p[i]; return s; }
+function initials(name){ var w=String(name||"?").trim().split(/\s+/);
+  return (w[0].charAt(0)+(w[1]?w[1].charAt(0):"")).toUpperCase(); }
+function copyText(txt, done){ function ok(){ if(done) done(true); }
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(txt).then(ok, function(){ fallback(); });
+  } else fallback();
+  function fallback(){ var ta=document.createElement("textarea");
+    ta.value=txt; ta.style.position="fixed"; ta.style.opacity="0";
+    document.body.appendChild(ta); ta.select();
+    try{ document.execCommand("copy"); ok(); }catch(e){ if(done) done(false); }
+    document.body.removeChild(ta); } }
+
+/* ------------------------------- I18N ---------------------------------- */
+var STR = {
+en:{
+  navHome:"Home", navDownloads:"Downloads", navHistory:"History",
+  navPlaylists:"Playlists", navAdult:"18+",
+  ageTitle:"Adults only (18+)",
+  ageBody:"This section may contain adult content and is strictly for users aged 18 or above. Music, movies and all other videos stay open for everyone — no check needed there.",
+  ageAgree:"I confirm that I am 18 years or older and I agree to enter this section.",
+  ageEnter:"Enter 18+ zone", ageBack:"Go back",
+  ageNote:"This confirmation is stored only on this device.",
+  ageHubSub:"Private zone — 18+ only", ageLock:"Lock again",
+  ageHint:"Tip: age-restricted videos need your YouTube account linked (Account tab). Everything here comes from YouTube.",
+  ageSearchPh:"Search 18+ videos\u2026", ageShelf:"\U0001F51E 18+ picks", navYou:"You", navAccount:"Account",
+  navSettings:"Settings", navHelp:"Help", navShortcuts:"Shortcuts",
+  navAbout:"About", navFoot:"Files are delivered to your Telegram chat.",
+  searchPh:"Search songs, artists…",
+  authTitle:"You're browsing outside Telegram.",
+  authBody:"Open this app from the bot's button to search & download.",
+  heroTitle:"Your music, one tap away.",
+  heroSub:"Search YouTube, pick MP3 or MP4, and the song lands straight in your Telegram chat — in studio quality.",
+  heroCta1:"Search music", heroCta2:"Link YouTube account",
+  recentlyPlayed:"Recently played", trending:"Trending searches",
+  shelfBolly:"🎤 Bollywood Top", shelfGlobal:"🎧 Global Hits",
+  shelfLofi:"🎹 Lo-fi Chill", shelfPunjabi:"🥁 Punjabi Hits",
+  sortRel:"Most relevant", sortDurAsc:"Shortest first", sortDurDesc:"Longest first",
+  sortAz:"Title A–Z",
+  noResults:"No results found", noResultsSub:"Try a different spelling, or add the artist name.",
+  searchFailed:"Search failed", retry:"Retry",
+  lockedTitle:"Search needs Telegram",
+  lockedSub:"This page must be opened from the bot's 🎵 button — that's where your secure login lives.",
+  dlAudio:"Download MP3", dlVideo:"Download MP4", addPl:"Playlist", share:"Share", play:"Play",
+  upNext:"Up next",
+  dlTitle:"Downloads", dlSub:"Songs are delivered to your Telegram chat when ready.",
+  clearDone:"Clear finished", noJobs:"Nothing downloading",
+  noJobsSub:"Search for a song and hit Download — it will appear here with live progress.",
+  histTitle:"History", clearAll:"Clear all", noHist:"No history yet",
+  noHistSub:"Songs you open will show up here for quick replay.",
+  plTitle:"Playlists", newPl:"New playlist", back:"Back", dlAll:"Download all",
+  noPl:"No playlists yet", noPlSub:"Create one, then add songs from any track page.",
+  accTitle:"Account", ckTitle:"YouTube account",
+  ckWhy:"Linking your account unlocks age-restricted videos and your Premium quality. Your cookies never leave this server.",
+  ckFileLbl:"cookies.txt file", ckFileHint:"Exported from your browser while logged in to youtube.com",
+  ckUpload:"Link account", ckUnlink:"Unlink",
+  ckHowTitle:"How to get cookies.txt", ckSafeTitle:"Is it safe?",
+  ckSafe:"Yes — the file is stored with private permissions, used only to fetch videos as you, and you can unlink anytime. Never share your cookies.txt with anyone else.",
+  setTitle:"Settings", setTheme:"Theme", setThemeD:"6 themes — Dark, Light, AMOLED, Neon, Sunset, Ocean",
+  thDark:"Dark", thLight:"Light", thAmoled:"AMOLED",
+  thNeon:"Neon", thSunset:"Sunset", thOcean:"Ocean",
+  setQuality:"Default download quality", setQualityD:"Used when you tap quick-download",
+  setLang:"Language · भाषा", setCompact:"Compact layout",
+  setCompactD:"Tighter spacing, more videos per screen",
+  setMotion:"Animations", setMotionD:"Turn off if you prefer a calmer UI",
+  setRail:"Mini sidebar", setRailD:"Icon-only navigation rail",
+  aboutTitle:"About",
+  aboutBody:"Telegram Mini App — search YouTube and get studio-quality MP3/MP4 delivered to your chat.",
+  trayTitle:"Downloads", open:"Open", palPh:"Type a command or search…",
+  justNow:"just now", minAgo:"m ago", hrAgo:"h ago", dayAgo:"d ago",
+  qMp3:"MP3 audio", qMp4:"MP4 video",
+  stQueued:"Queued", stDownloading:"Downloading", stSending:"Sending to Telegram",
+  stDone:"Delivered ✓", stError:"Failed",
+  toastQueued:"Download queued — watch it in Downloads 📥",
+  toastDone:"Delivered to your Telegram chat ✓",
+  toastFail:"Download failed",
+  toastCopied:"Copied ✓", toastCopyFail:"Copy failed",
+  toastPlCreated:"Playlist created 🎶", toastAdded:"Added to playlist ✓",
+  toastRemoved:"Removed", toastPlDeleted:"Playlist deleted",
+  toastHistCleared:"History cleared", toastDoneCleared:"Finished downloads cleared",
+  toastCkLinked:"YouTube account linked ✓", toastCkUnlinked:"Account unlinked",
+  toastCkNoFile:"Choose your cookies.txt file first",
+  toastCkBad:"That file was rejected — export cookies.txt while on youtube.com",
+  needTg:"Open this app from the bot's 🎵 button to use this.",
+  confirmClearHist:"Clear all history?", confirmDelPl:"Delete this playlist?",
+  confirmUnlink:"Unlink your YouTube account?",
+  dlgPlaylistTitle:"Save to playlist", dlgNewPl:"New playlist…",
+  plNamePh:"Playlist name", create:"Create", cancel:"Cancel", save:"Save",
+  rename:"Rename", del:"Delete", close:"Close", ok:"OK",
+  chooseQuality:"Choose quality", songs:"songs", song:"song",
+  resultsFor:"results for", typeToSearch:"Type to search YouTube",
+  ckLinked:"Account linked", ckNotLinked:"Not linked",
+  ckLinkedHint:"Age-restricted & Premium-quality downloads unlocked.",
+  ckNotLinkedHint:"Link to unlock age-restricted videos.",
+  step1t:"Install a cookies.txt exporter",
+  step1d:"Get the “Get cookies.txt” extension for Chrome / Firefox / Edge.",
+  step2t:"Open youtube.com and log in",
+  step2d:"Make sure you're signed in to the Google account you want to use.",
+  step3t:"Export and upload",
+  step3d:"Click the extension → Export → choose the file above → Link account.",
+  errAuth:"Session expired — reopen the app from Telegram.",
+  errNet:"Network error — check your connection and retry.",
+  shortcutTitle:"Keyboard shortcuts",
+  aboutDlg:"YTMUSIC Studio v3.0 “mega”. Search YouTube, download MP3/MP4, delivered to your Telegram chat.",
+  palGoHome:"Go to Home", palGoDl:"Go to Downloads", palGoHist:"Go to History",
+  palGoPl:"Go to Playlists", palGoAcc:"Go to Account", palGoSet:"Go to Settings",
+  palToggleTheme:"Toggle theme", palClearHist:"Clear history",
+  qSearchPh:"Search YouTube…",
+  quickSearch:"Quick search", quickDl:"My downloads", quickLink:"Link account",
+  quickPl:"New playlist",
+  emptyQ:"Search for anything — songs, artists, albums.",
+  addedToQ:"Added ✓"
+},
+hi:{
+  navHome:"होम", navDownloads:"डाउनलोड", navHistory:"इतिहास",
+  navPlaylists:"प्लेलिस्ट", navAdult:"18+",
+  ageTitle:"केवल वयस्क (18+)",
+  ageBody:"इस सेक्शन में वयस्क सामग्री हो सकती है और यह केवल 18 वर्ष या उससे अधिक उम्र वालों के लिए है। संगीत, फिल्में और बाकी सभी वीडियो सभी के लिए खुले हैं — वहां कोई जांच नहीं।",
+  ageAgree:"मैं पुष्टि करता/करती हूं कि मैं 18 वर्ष या उससे अधिक का/की हूं और इस सेक्शन में प्रवेश के लिए सहमत हूं।",
+  ageEnter:"18+ ज़ोन में प्रवेश करें", ageBack:"वापस जाएं",
+  ageNote:"यह पुष्टि केवल इस डिवाइस पर सहेजी जाती है।",
+  ageHubSub:"निजी ज़ोन — केवल 18+", ageLock:"फिर से लॉक करें",
+  ageHint:"टिप: उम्र-प्रतिबंधित वीडियो के लिए आपका YouTube अकाउंट लिंक होना चाहिए (Account टैब)। यहां सभ कुटेंट YouTube से ही आता है।",
+  ageSearchPh:"18+ वीडियो खोजें\u2026", ageShelf:"🔞 18+ चुनिंदा", navYou:"आप", navAccount:"अकाउंट",
+  navSettings:"सेटिंग्स", navHelp:"मदद", navShortcuts:"शॉर्टकट",
+  navAbout:"जानकारी", navFoot:"फाइलें आपके Telegram चैट में भेजी जाती हैं।",
+  searchPh:"गाने, कलाकार खोजें…",
+  authTitle:"आप Telegram के बाहर देख रहे हैं।",
+  authBody:"सर्च और डाउनलोड के लिए बॉट के बटन से यह ऐप खोलें।",
+  heroTitle:"आपका संगीत, एक टैप पर।",
+  heroSub:"YouTube पर खोजें, MP3 या MP4 चुनें — गाना सीधे आपके Telegram चैट में, स्टूडियो क्वालिटी में।",
+  heroCta1:"म्यूज़िक खोजें", heroCta2:"YouTube अकाउंट लिंक करें",
+  recentlyPlayed:"हाल में बजाए", trending:"ट्रेंडिंग खोजें",
+  shelfBolly:"🎤 बॉलीवुड टॉप", shelfGlobal:"🎧 ग्लोबल हिट्स",
+  shelfLofi:"🎹 लो-फाई चिल", shelfPunjabi:"🥁 पंजाबी हिट्स",
+  sortRel:"सबसे प्रासंगिक", sortDurAsc:"छोटे पहले", sortDurDesc:"बड़े पहले",
+  sortAz:"शीर्षक A–Z",
+  noResults:"कोई नतीजा नहीं", noResultsSub:"स्पेलिंग बदलकर देखें, या कलाकार का नाम जोड़ें।",
+  searchFailed:"खोज असफल", retry:"पुनः प्रयास",
+  lockedTitle:"खोज के लिए Telegram चाहिए",
+  lockedSub:"यह पेज बॉट के 🎵 बटन से खोलें — वहीं आपका सुरक्षित लॉगिन है।",
+  dlAudio:"MP3 डाउनलोड", dlVideo:"MP4 डाउनलोड", addPl:"प्लेलिस्ट", share:"शेयर", play:"चलाएँ",
+  upNext:"आगे",
+  dlTitle:"डाउनलोड", dlSub:"तैयार होते ही गाने आपके Telegram चैट में भेजे जाएंगे।",
+  clearDone:"पूर्ण हटाएं", noJobs:"कुछ डाउनलोड नहीं हो रहा",
+  noJobsSub:"गाना खोजें और Download दबाएं — यहां लाइव प्रगति दिखेगी।",
+  histTitle:"इतिहास", clearAll:"सब हटाएं", noHist:"अभी कोई इतिहास नहीं",
+  noHistSub:"आप जो गाने खोलेंगे वे यहां दिखेंगे।",
+  plTitle:"प्लेलिस्ट", newPl:"नई प्लेलिस्ट", back:"वापस", dlAll:"सभी डाउनलोड",
+  noPl:"अभी कोई प्लेलिस्ट नहीं", noPlSub:"एक बनाएं, फिर किसी भी गाने से जोड़ें।",
+  accTitle:"अकाउंट", ckTitle:"YouTube अकाउंट",
+  ckWhy:"अकाउंट लिंक करने से उम्र-प्रतिबंधित वीडियो और Premium क्वालिटी मिलती है। आपकी कुकीज़ इस सर्वर से बाहर नहीं जातीं।",
+  ckFileLbl:"cookies.txt फाइल", ckFileHint:"youtube.com पर लॉगिन करके ब्राउज़र से एक्सपोर्ट करें",
+  ckUpload:"अकाउंट लिंक करें", ckUnlink:"अनलिंक",
+  ckHowTitle:"cookies.txt कैसे पाएं", ckSafeTitle:"क्या यह सुरक्षित है?",
+  ckSafe:"हां — फाइल निजी अनुमति के साथ रखी जाती है, सिर्फ आपके लिए वीडियो लाने में इस्तेमाल होती है, और आप कभी भी अनलिंक कर सकते हैं। अपनी cookies.txt किसी से साझा न करें।",
+  setTitle:"सेटिंग्स", setTheme:"थीम", setThemeD:"6 थीम — डार्क, लाइट, AMOLED, नियॉन, सनसेट, ओशन",
+  thDark:"डार्क", thLight:"लाइट", thAmoled:"AMOLED",
+  thNeon:"नियॉन", thSunset:"सनसेट", thOcean:"ओशन",
+  setQuality:"डिफ़ॉल्ट डाउनलोड क्वालिटी", setQualityD:"क्विक-डाउनलोड दबाने पर यही लगेगी",
+  setLang:"Language · भाषा", setCompact:"कॉम्पैक्ट लेआउट",
+  setCompactD:"कम जगह, एक स्क्रीन में ज़्यादा वीडियो",
+  setMotion:"एनिमेशन", setMotionD:"शांत UI चाहिए तो बंद करें",
+  setRail:"मिनी साइडबार", setRailD:"सिर्फ आइकन वाला नेविगेशन",
+  aboutTitle:"जानकारी",
+  aboutBody:"Telegram Mini App — YouTube खोजें और स्टूडियो-क्वालिटी MP3/MP4 अपने चैट में पाएं।",
+  trayTitle:"डाउनलोड", open:"खोलें", palPh:"कमांड लिखें या खोजें…",
+  justNow:"अभी", minAgo:" मि. पहले", hrAgo:" घं. पहले", dayAgo:" दि. पहले",
+  qMp3:"MP3 ऑडियो", qMp4:"MP4 वीडियो",
+  stQueued:"कतार में", stDownloading:"डाउनलोड हो रहा", stSending:"Telegram में भेजा जा रहा",
+  stDone:"पहुंच गया ✓", stError:"असफल",
+  toastQueued:"डाउनलोड कतार में — Downloads में देखें 📥",
+  toastDone:"आपके Telegram चैट में पहुंच गया ✓",
+  toastFail:"डाउनलोड असफल",
+  toastCopied:"कॉपी हो गया ✓", toastCopyFail:"कॉपी असफल",
+  toastPlCreated:"प्लेलिस्ट बन गई 🎶", toastAdded:"प्लेलिस्ट में जुड़ गया ✓",
+  toastRemoved:"हटाया गया", toastPlDeleted:"प्लेलिस्ट हटाई गई",
+  toastHistCleared:"इतिहास साफ़", toastDoneCleared:"पूर्ण डाउनलोड हटाए गए",
+  toastCkLinked:"YouTube अकाउंट लिंक हो गया ✓", toastCkUnlinked:"अकाउंट अनलिंक",
+  toastCkNoFile:"पहले अपनी cookies.txt फाइल चुनें",
+  toastCkBad:"फाइल अस्वीकृत — youtube.com पर जाकर cookies.txt एक्सपोर्ट करें",
+  needTg:"इसे इस्तेमाल करने के लिए बॉट के 🎵 बटन से ऐप खोलें।",
+  confirmClearHist:"पूरा इतिहास हटाएं?", confirmDelPl:"यह प्लेलिस्ट हटाएं?",
+  confirmUnlink:"YouTube अकाउंट अनलिंक करें?",
+  dlgPlaylistTitle:"प्लेलिस्ट में सेव करें", dlgNewPl:"नई प्लेलिस्ट…",
+  plNamePh:"प्लेलिस्ट का नाम", create:"बनाएं", cancel:"रद्द करें", save:"सेव",
+  rename:"नाम बदलें", del:"हटाएं", close:"बंद करें", ok:"ठीक है",
+  chooseQuality:"क्वालिटी चुनें", songs:"गाने", song:"गाना",
+  resultsFor:"के नतीजे", typeToSearch:"YouTube खोजने के लिए लिखें",
+  ckLinked:"अकाउंट लिंक है", ckNotLinked:"लिंक नहीं है",
+  ckLinkedHint:"उम्र-प्रतिबंधित और Premium क्वालिटी डाउनलोड चालू।",
+  ckNotLinkedHint:"उम्र-प्रतिबंधित वीडियो के लिए लिंक करें।",
+  step1t:"cookies.txt एक्सपोर्टर इंस्टॉल करें",
+  step1d:"Chrome / Firefox / Edge के लिए “Get cookies.txt” एक्सटेंशन लें।",
+  step2t:"youtube.com खोलें और लॉगिन करें",
+  step2d:"उसी Google अकाउंट से साइन इन हों जिसे इस्तेमाल करना है।",
+  step3t:"एक्सपोर्ट करके अपलोड करें",
+  step3d:"एक्सटेंशन → Export → ऊपर फाइल चुनें → Link account दबाएं।",
+  errAuth:"सत्र समाप्त — Telegram से ऐप दोबारा खोलें।",
+  errNet:"नेटवर्क त्रुटि — कनेक्शन जांचें और पुनः प्रयास करें।",
+  shortcutTitle:"कीबोर्ड शॉर्टकट",
+  aboutDlg:"YTMUSIC Studio v3.0 “mega”। YouTube खोजें, MP3/MP4 डाउनलोड करें, आपके Telegram चैट में डिलीवर।",
+  palGoHome:"होम पर जाएं", palGoDl:"डाउनलोड पर जाएं", palGoHist:"इतिहास पर जाएं",
+  palGoPl:"प्लेलिस्ट पर जाएं", palGoAcc:"अकाउंट पर जाएं", palGoSet:"सेटिंग्स पर जाएं",
+  palToggleTheme:"थीम बदलें", palClearHist:"इतिहास साफ़ करें",
+  qSearchPh:"YouTube खोजें…",
+  quickSearch:"क्विक सर्च", quickDl:"मेरे डाउनलोड", quickLink:"अकाउंट लिंक",
+  quickPl:"नई प्लेलिस्ट",
+  emptyQ:"कुछ भी खोजें — गाने, कलाकार, एल्बम।",
+  addedToQ:"जुड़ गया ✓"
+}};
+var LANG = "en";
+function t(k){ var d = STR[LANG] || STR.en; return d[k] != null ? d[k] : (STR.en[k] != null ? STR.en[k] : k); }
+function applyI18n(){
+  $$("[data-i18n]").forEach(function(el){ el.textContent = t(el.getAttribute("data-i18n")); });
+  $$("[data-i18n-ph]").forEach(function(el){ el.setAttribute("placeholder", t(el.getAttribute("data-i18n-ph"))); });
+  document.documentElement.lang = LANG;
+}
+
+/* --------------------------- TELEGRAM BRIDGE --------------------------- */
+var TG = (window.Telegram && window.Telegram.WebApp) ? window.Telegram.WebApp : null;
+var INIT = (TG && TG.initData) || "";
+var TG_USER = (TG && TG.initDataUnsafe && TG.initDataUnsafe.user) || null;
+function inTelegram(){ return !!INIT; }
+function tgInit(){
+  if(!TG) return;
+  try{
+    TG.ready(); TG.expand();
+    if(TG.setHeaderColor){ try{ TG.setHeaderColor("#0f0f0f"); }catch(e){} }
+    if(TG.setBackgroundColor){ try{ TG.setBackgroundColor("#0f0f0f"); }catch(e){} }
+    if(TG.disableVerticalSwipes){ try{ TG.disableVerticalSwipes(); }catch(e){} }
+    var av = $("#avatarBtn");
+    if(TG_USER && TG_USER.first_name) av.textContent = initials(TG_USER.first_name);
+  }catch(e){ /* never let TG break the app */ }
+}
+function haptic(kind){ try{
+  if(TG && TG.HapticFeedback){ TG.HapticFeedback.impactOccurred(kind||"light"); }
+}catch(e){} }
+
+/* -------------------------------- THEME ------------------------------- */
+function setTheme(name){
+  var ok = {dark:1, light:1, amoled:1, neon:1, sunset:1, ocean:1};
+  name = ok[name] ? name : "dark";
+  document.documentElement.setAttribute("data-theme", name);
+  Store.settings.theme = name; Store.save();
+  var meta = $("#metaTheme");
+  if(meta) meta.setAttribute("content", name==="light" ? "#ffffff" : "#0f0f0f");
+  $$("#segTheme button").forEach(function(b){
+    b.classList.toggle("active", b.getAttribute("data-v")===name); });
+  var tb = $("#btnTheme");
+  if(tb){ var ic={dark:"🌙",light:"☀️",amoled:"🖤",neon:"🌆",sunset:"🌅",ocean:"🌊"};
+    tb.textContent = ic[name]||"🌙"; }
+  try{ if(TG && TG.setHeaderColor)
+    TG.setHeaderColor(name==="light" ? "#ffffff" : "#0f0f0f"); }catch(e){}
+}
+function cycleTheme(){
+  var order = ["dark","light","amoled","neon","sunset","ocean"];
+  var cur = Store.settings.theme || "dark";
+  setTheme(order[(order.indexOf(cur)+1)%order.length]);
+  haptic("light");
+}
+function applyDensity(){
+  document.documentElement.setAttribute("data-density",
+    Store.settings.compact ? "compact" : "cozy");
+}
+function applyMotion(){
+  document.documentElement.setAttribute("data-motion",
+    Store.settings.motion ? "on" : "off");
+}
+function applyRail(){
+  document.getElementById("app").classList.toggle("rail", !!Store.settings.rail);
+}
+
+/* --------------------------------- API --------------------------------- */
+var QUALITIES = [
+  { id:"mp3_320", kind:"mp3", label:"MP3 · 320 kbps", icon:"🎧", desc:"qMp3" },
+  { id:"mp3_128", kind:"mp3", label:"MP3 · 128 kbps", icon:"🎵", desc:"qMp3" },
+  { id:"mp4_720", kind:"mp4", label:"MP4 · 720p",      icon:"🎬", desc:"qMp4" }
+];
+function qById(id){ for(var i=0;i<QUALITIES.length;i++)
+  if(QUALITIES[i].id===id) return QUALITIES[i]; return QUALITIES[0]; }
+
+function apiErrorMessage(status, body){
+  if(status===401) return t("errAuth");
+  if(body && body.error) return body.error;
+  return t("errNet");
+}
+function apiPost(path, json){
+  var payload = Object.assign({ initData: INIT }, json||{});
+  return fetch(path, { method:"POST",
+    headers:{ "Content-Type":"application/json" },
+    body: JSON.stringify(payload)
+  }).then(function(res){ return res.json().then(function(b){
+    return { status: res.status, body: b }; }); });
+}
+function apiGet(path){
+  var sep = path.indexOf("?")>=0 ? "&" : "?";
+  return fetch(path + sep + "initData=" + encodeURIComponent(INIT))
+    .then(function(res){ return res.json().then(function(b){
+      return { status: res.status, body: b }; }); });
+}
+function apiDelete(path){
+  return fetch(path, { method:"DELETE",
+    headers:{ "Content-Type":"application/json" },
+    body: JSON.stringify({ initData: INIT })
+  }).then(function(res){ return res.json().then(function(b){
+    return { status: res.status, body: b }; }); });
+}
+/* guard: actions that need Telegram login */
+function needAuth(){
+  if(inTelegram()) return true;
+  toast("🔒 " + t("needTg"));
+  haptic("medium");
+  return false;
+}
+
+/* -------------------------------- STORE -------------------------------- */
+var Store = {
+  KEY: "ytmstudio.v3",
+  settings: { theme:"dark", quality:"mp3_320", lang:"en",
+              compact:false, motion:true, rail:false },
+  searches: [],   /* [query,...] most-recent-first, max 12 */
+  history: [],    /* [track,...] most-recent-first, max 60 */
+  playlists: [],  /* [{id,name,created,tracks:[track]}] */
+  ageOk: false,   /* 18+ gate: confirmed on this device */
+  load: function(){
+    try{
+      var raw = localStorage.getItem(this.KEY);
+      if(!raw) return;
+      var d = JSON.parse(raw);
+      if(d.settings) for(var k in this.settings)
+        if(d.settings[k] !== undefined) this.settings[k] = d.settings[k];
+      if(d.searches) this.searches = d.searches.slice(0,12);
+      if(d.history) this.history = d.history.slice(0,60);
+      if(d.playlists) this.playlists = d.playlists;
+      if(d.ageOk) this.ageOk = true;
+    }catch(e){ /* corrupted storage -> start fresh */ }
+  },
+  save: function(){
+    try{ localStorage.setItem(this.KEY, JSON.stringify({
+      settings:this.settings, searches:this.searches,
+      history:this.history, playlists:this.playlists,
+      ageOk:this.ageOk })); }catch(e){}
+  },
+  pushSearch: function(q){
+    q = String(q||"").trim(); if(!q) return;
+    this.searches = [q].concat(this.searches.filter(function(x){
+      return x.toLowerCase()!==q.toLowerCase(); })).slice(0,12);
+    this.save();
+  },
+  dropSearch: function(q){
+    this.searches = this.searches.filter(function(x){ return x!==q; });
+    this.save();
+  },
+  pushHistory: function(track){
+    if(!track || !track.id) return;
+    this.history = [Object.assign({ ts: Date.now() }, track)]
+      .concat(this.history.filter(function(x){ return x.id!==track.id; }))
+      .slice(0,60);
+    this.save();
+  },
+  clearHistory: function(){ this.history = []; this.save(); },
+  newPlaylist: function(name){
+    var pl = { id: uid("pl"), name: String(name||"Untitled").slice(0,60),
+               created: Date.now(), tracks: [] };
+    this.playlists.unshift(pl); this.save(); return pl;
+  },
+  getPlaylist: function(id){ for(var i=0;i<this.playlists.length;i++)
+    if(this.playlists[i].id===id) return this.playlists[i]; return null; },
+  addToPlaylist: function(pid, track){
+    var pl = this.getPlaylist(pid); if(!pl || !track) return false;
+    if(pl.tracks.some(function(x){ return x.id===track.id; })) return true;
+    pl.tracks.push(track); this.save(); return true;
+  },
+  removeFromPlaylist: function(pid, vid){
+    var pl = this.getPlaylist(pid); if(!pl) return;
+    pl.tracks = pl.tracks.filter(function(x){ return x.id!==vid; });
+    this.save();
+  },
+  deletePlaylist: function(pid){
+    this.playlists = this.playlists.filter(function(p){ return p.id!==pid; });
+    this.save();
+  }
+};
+
+/* ----------------------------- COMPONENTS ---------------------------- */
+/* toast */
+function toast(msg, ms){
+  var box = $("#toasts");
+  var el = document.createElement("div");
+  el.className = "toast"; el.innerHTML = msg;
+  box.appendChild(el);
+  while(box.children.length > 3) box.removeChild(box.firstChild);
+  setTimeout(function(){ el.classList.add("out");
+    setTimeout(function(){ if(el.parentNode) el.parentNode.removeChild(el); }, 220);
+  }, ms || 2600);
+}
+/* dialog */
+var Dlg = {
+  open: function(title, bodyHTML, buttons){
+    $("#dlgTitle").textContent = title;
+    $("#dlgBody").innerHTML = bodyHTML || "";
+    var foot = $("#dlgFoot"); foot.innerHTML = "";
+    (buttons||[{label:t("close")}]).forEach(function(b){
+      var btn = document.createElement("button");
+      btn.className = "btn" + (b.primary ? " primary" : "") + (b.sm ? " sm" : "");
+      btn.innerHTML = esc(b.label);
+      btn.onclick = function(){ if(b.onClick) b.onClick(); if(!b.keep) Dlg.close(); };
+      foot.appendChild(btn);
+    });
+    $("#scrim").hidden = false;
+    haptic("light");
+    return $("#dlgBody");
+  },
+  close: function(){ $("#scrim").hidden = true; },
+  confirm: function(title, body, okLabel, onOk){
+    this.open(title, "<p style='color:var(--text-2)'>"+esc(body)+"</p>", [
+      { label: t("cancel") },
+      { label: okLabel||t("ok"), primary:true, onClick:onOk }
+    ]);
+  },
+  prompt: function(title, label, initial, okLabel, onOk){
+    var id = uid("f");
+    var body = this.open(title,
+      '<div class="field"><label for="'+id+'">'+esc(label)+'</label>' +
+      '<input class="input" id="'+id+'" maxlength="60" value="'+esc(initial||"")+'"></div>',
+      [ { label:t("cancel") },
+        { label: okLabel||t("save"), primary:true, keep:true,
+          onClick:function(){ var v=$("#"+id).value.trim();
+            if(!v){ $("#"+id).focus(); return; } Dlg.close(); onOk(v); } } ]);
+    setTimeout(function(){ var i=$("#"+id); if(i){ i.focus(); i.select(); } }, 60);
+    return body;
+  }
+};
+/* popup menu anchored to a button */
+var Menu = {
+  el: null,
+  close: function(){ if(this.el && this.el.parentNode)
+    this.el.parentNode.removeChild(this.el); this.el = null;
+    document.removeEventListener("click", Menu._out, true); },
+  _out: function(e){ if(Menu.el && !Menu.el.contains(e.target)) Menu.close(); },
+  open: function(anchor, items){
+    this.close();
+    var m = document.createElement("div");
+    m.className = "menu"; m.setAttribute("role","menu");
+    items.forEach(function(it){
+      if(it.sep){ var s=document.createElement("div"); s.className="menu-sep";
+        m.appendChild(s); return; }
+      if(it.head){ var h=document.createElement("div"); h.className="menu-head";
+        h.textContent=it.head; m.appendChild(h); return; }
+      var b=document.createElement("button");
+      b.className="menu-item"; b.setAttribute("role","menuitem");
+      b.innerHTML = '<span class="ic">'+(it.icon||"•")+'</span><span>'+
+        esc(it.label)+'</span>' + (it.tag?'<span class="tag">'+esc(it.tag)+'</span>':"");
+      b.onclick = function(ev){ ev.stopPropagation(); Menu.close();
+        if(it.onClick) it.onClick(); };
+      m.appendChild(b);
+    });
+    document.body.appendChild(m);
+    var r = anchor.getBoundingClientRect();
+    var mw = 240, mh = Math.min(items.length*46+16, 380);
+    var x = clamp(r.right - mw, 8, window.innerWidth - mw - 8);
+    var y = r.bottom + 6;
+    if(y + mh > window.innerHeight - 8) y = Math.max(8, r.top - mh - 6);
+    m.style.left = x+"px"; m.style.top = y+"px";
+    this.el = m;
+    setTimeout(function(){
+      document.addEventListener("click", Menu._out, true); }, 10);
+    return m;
+  }
+};
+/* tooltip (data-tip) */
+var Tip = {
+  show: function(el){ var txt = el.getAttribute("data-tip"); if(!txt) return;
+    var tp = $("#tooltip"); tp.textContent = txt; tp.hidden = false;
+    var r = el.getBoundingClientRect();
+    tp.style.left = clamp(r.left + r.width/2 - tp.offsetWidth/2, 8,
+      window.innerWidth - tp.offsetWidth - 8) + "px";
+    tp.style.top = (r.bottom + 8) + "px"; },
+  hide: function(){ $("#tooltip").hidden = true; }
+};
+/* skeleton cards */
+function skeletonCards(n){
+  var h = "";
+  for(var i=0;i<(n||8);i++)
+    h += '<div class="sk"><div class="thumb shimmer"></div>'+
+         '<div class="ln shimmer"></div><div class="ln w60 shimmer"></div></div>';
+  return h;
+}
+/* a single video card (grid or list) */
+function videoCard(v, opts){
+  opts = opts || {};
+  var el = document.createElement("div");
+  el.className = "vcard"; el.setAttribute("data-vid", v.id);
+  el.setAttribute("tabindex","0"); el.setAttribute("role","button");
+  el.setAttribute("aria-label", v.title);
+  el.innerHTML =
+    '<div class="thumb"><img loading="lazy" src="'+esc(v.thumb)+'" alt="">'+
+    (v.duration?'<span class="badge-dur">'+esc(v.duration)+'</span>':"")+
+    '<div class="row-actions"><button class="mini-btn" data-act="play" title="'+
+      esc(t("play"))+'">▶</button><button class="mini-btn" data-act="dl" title="'+
+      esc(t("dlAudio"))+'">⬇</button></div></div>'+
+    '<div class="meta"><div class="avatar">'+esc(initials(v.uploader||v.title))+'</div>'+
+    '<div style="min-width:0;flex:1"><p class="t">'+esc(v.title)+'</p>'+
+    '<p class="s">'+esc(v.uploader||"")+(v.duration?" · "+esc(v.duration):"")+'</p></div></div>';
+  function open(){ openTrack(v); }
+  el.addEventListener("click", function(e){
+    var act = e.target.closest("[data-act]");
+    if(act){
+      var an = act.getAttribute("data-act");
+      e.stopPropagation();
+      if(an==="dl"){ quickDownload(v, e); return; }
+      if(an==="play"){ Player.open(v); return; }
+    }
+    open();
+  });
+  el.addEventListener("keydown", function(e){
+    if(e.key==="Enter"||e.key===" "){ e.preventDefault(); open(); } });
+  return el;
+}
+function renderCardsInto(box, list){
+  box.innerHTML = "";
+  list.forEach(function(v){ box.appendChild(videoCard(v)); });
+}
+
+/* in-app player (YouTube embed preview) */
+var Player = {
+  video: null,
+  open: function(v){
+    if(!v || !v.id) return;
+    this.video = v;
+    $("#playerTitle").textContent = v.title || "Untitled";
+    $("#playerSub").textContent = [v.uploader, v.duration].filter(Boolean).join(" \u00B7 ");
+    $("#playerFrame").src = "https://www.youtube-nocookie.com/embed/" +
+      encodeURIComponent(v.id) + "?autoplay=1&rel=0";
+    $("#playerDl").textContent = "\u2B07 " + t("dlAudio");
+    $("#playerScrim").hidden = false;
+    try{ haptic("light"); }catch(e){}
+  },
+  close: function(){
+    $("#playerFrame").src = "";
+    $("#playerScrim").hidden = true;
+    this.video = null;
+  },
+  init: function(){
+    var self = this;
+    $("#playerClose").addEventListener("click", function(){ self.close(); });
+    $("#playerScrim").addEventListener("click", function(e){
+      if(e.target.id === "playerScrim") self.close();
+    });
+    document.addEventListener("keydown", function(e){
+      if(e.key === "Escape" && !$("#playerScrim").hidden) self.close();
+    });
+    $("#playerDl").addEventListener("click", function(e){
+      if(self.video) quickDownload(self.video, e);
+    });
+  }
+};
+/* ------------------------------- ROUTER ------------------------------ */
+var Router = {
+  routes: ["#/","#/search","#/track","#/downloads","#/history",
+           "#/playlists","#/adult","#/account","#/settings"],
+  current: null, params: {},
+  parse: function(){
+    var h = location.hash || "#/";
+    var q = h.indexOf("?");
+    var path = q>=0 ? h.slice(0,q) : h;
+    var params = {};
+    if(q>=0) h.slice(q+1).split("&").forEach(function(p){
+      var kv = p.split("="); params[decodeURIComponent(kv[0])] =
+        decodeURIComponent(kv[1]||""); });
+    return { path:path, params:params };
+  },
+  go: function(hash){ if(location.hash===hash) this.render();
+    else location.hash = hash; },
+  render: function(){
+    var r = this.parse();
+    var path = r.path, params = r.params;
+    this.params = params; this.current = path;
+    $$(".view").forEach(function(v){ v.hidden = true; });
+    $$("#sidebar .nav-item[data-route]").forEach(function(b){
+      var br = b.getAttribute("data-route");
+      b.classList.toggle("active",
+        br===path || (br==="#/" && (path==="#/"||path==="")));
+    });
+    var map = { "#/":"view-home", "#/search":"view-search",
+      "#/track":"view-track", "#/downloads":"view-downloads",
+      "#/history":"view-history", "#/playlists":"view-playlists",
+      "#/adult":"view-adult",
+      "#/account":"view-account", "#/settings":"view-settings" };
+    var id = map[path] || "view-home";
+    var sec = document.getElementById(id); sec.hidden = false;
+    $("#viewScroll").scrollTop = 0;
+    document.getElementById("app").classList.remove("nav-open");
+    if(id==="view-home") ViewHome.render();
+    else if(id==="view-search") ViewSearch.render(params.q||"");
+    else if(id==="view-track") ViewTrack.render(params.id||"");
+    else if(id==="view-downloads") ViewDownloads.render();
+    else if(id==="view-history") ViewHistory.render();
+    else if(id==="view-playlists") ViewPlaylists.render(params.pl);
+    else if(id==="view-adult") ViewAdult.render();
+    else if(id==="view-account") ViewAccount.render();
+    else if(id==="view-settings") ViewSettings.render();
+  },
+  init: function(){ window.addEventListener("hashchange",
+    function(){ Router.render(); }); }
+};
+/* remember last results so track view can resolve + "up next" */
+var LastResults = { q:"", list:[] };
+function findTrack(id){
+  var pools = [LastResults.list, Store.history];
+  Store.playlists.forEach(function(p){ pools.push(p.tracks); });
+  for(var i=0;i<pools.length;i++) for(var j=0;j<pools[i].length;j++)
+    if(pools[i][j].id===id) return pools[i][j];
+  return null;
+}
+function openTrack(v){
+  if(!v) return;
+  Store.pushHistory(v);
+  Router.go("#/track?id=" + encodeURIComponent(v.id));
+}
+
+/* ------------------------------ VIEW: HOME --------------------------- */
+var TRENDING = [
+  "Arijit Singh hits", "lofi hip hop radio", "A. R. Rahman",
+  "Top 100 India", "acoustic covers", "Punjabi hits 2026",
+  "Shreya Ghoshal", "chill vibes playlist", "90s Bollywood evergreen",
+  "EDM workout mix", "Atif Aslam", "unplugged sessions"
+];
+var MUSIC_SHELVES = [
+  { ic:"🎤", key:"shelfBolly", q:"bollywood top songs 2026" },
+  { ic:"🎧", key:"shelfGlobal", q:"global top hits 2026" },
+  { ic:"🎹", key:"shelfLofi", q:"lofi chill beats mix" },
+  { ic:"🥁", key:"shelfPunjabi", q:"punjabi hit songs 2026" },
+];
+var ViewHome = {
+  rendered: false,
+  render: function(){
+    $("#authBanner").hidden = inTelegram();
+    this.renderChips(); this.renderQuick(); this.renderRecent();
+    if(!this.rendered){ this.rendered = true; this.renderTrending(); this.renderMusic(); }
+  },
+  renderChips: function(){
+    var row = $("#chipRow"); row.innerHTML = "";
+    var all = ["✨ " + t("trending")].concat(TRENDING.slice(0,10));
+    all.forEach(function(c, i){
+      var b = document.createElement("button");
+      b.className = "chip" + (i===0 ? " active" : "");
+      b.setAttribute("role","tab"); b.textContent = c;
+      b.onclick = function(){
+        $$("#chipRow .chip").forEach(function(x){ x.classList.remove("active"); });
+        b.classList.add("active"); haptic("light");
+        var q = i===0 ? TRENDING[Math.floor(Math.random()*TRENDING.length)]
+                      : TRENDING[i-1];
+        Router.go("#/search?q=" + encodeURIComponent(q));
+      };
+      row.appendChild(b);
+    });
+  },
+  renderQuick: function(){
+    var g = $("#quickGrid"); g.innerHTML = "";
+    var items = [
+      { ic:"🔍", label:t("quickSearch"),
+        fn:function(){ $("#searchInput").focus(); } },
+      { ic:"📥", label:t("quickDl"),
+        fn:function(){ Router.go("#/downloads"); } },
+      { ic:"🔗", label:t("quickLink"),
+        fn:function(){ Router.go("#/account"); } },
+      { ic:"➕", label:t("quickPl"),
+        fn:function(){ ViewPlaylists.askNew(); } }
+    ];
+    items.forEach(function(it){
+      var b = document.createElement("button");
+      b.className = "quick";
+      b.innerHTML = '<span class="ic">'+it.ic+'</span><span>'+esc(it.label)+'</span>';
+      b.onclick = function(){ haptic("light"); it.fn(); };
+      g.appendChild(b);
+    });
+  },
+  renderRecent: function(){
+    var shelf = $("#recentShelf"), grid = $("#recentGrid");
+    var list = Store.history.slice(0,6);
+    shelf.hidden = list.length === 0;
+    grid.innerHTML = "";
+    list.forEach(function(v){ grid.appendChild(videoCard(v)); });
+  },
+  renderMusic: function(){
+    var box = $("#moreShelves"); if(!box || this.musicDone) return;
+    this.musicDone = true;
+    MUSIC_SHELVES.forEach(function(sh){
+      var sec = document.createElement("div");
+      sec.className = "shelf";
+      sec.innerHTML = '<div class="shelf-head"><h2 class="shelf-title"><span class="ic">'+
+        sh.ic+'</span><span>'+esc(t(sh.key))+'</span></h2></div>'+
+        '<div class="card-grid">'+skeletonCards(6)+'</div>';
+      box.appendChild(sec);
+      var grid = sec.querySelector(".card-grid");
+      apiPost("/api/search", { q: sh.q }).then(function(r){
+        if(r.status===200 && r.body.ok && (r.body.results||[]).length){
+          renderCardsInto(grid, r.body.results.slice(0,6));
+        } else { sec.style.display = "none"; }
+      }).catch(function(){ sec.style.display = "none"; });
+    });
+  },
+  renderTrending: function(){
+    var grid = $("#trendGrid"); grid.innerHTML = skeletonCards(6);
+    /* trending = a real search for a rotating topic, so thumbs are live */
+    var topic = TRENDING[new Date().getDate() % TRENDING.length];
+    if(!inTelegram()){
+      /* outside Telegram: show topic tiles that search on tap */
+      grid.innerHTML = "";
+      TRENDING.slice(0,6).forEach(function(tp){
+        var b = document.createElement("button");
+        b.className = "quick"; b.style.minHeight = "86px";
+        b.innerHTML = '<span class="ic">🔥</span><span>'+esc(tp)+'</span>';
+        b.onclick = function(){ Router.go("#/search?q="+encodeURIComponent(tp)); };
+        grid.appendChild(b);
+      });
+      return;
+    }
+    apiPost("/api/search", { q: topic }).then(function(r){
+      if(r.status===200 && r.body.ok){
+        LastResults = { q: topic, list: r.body.results };
+        renderCardsInto(grid, r.body.results.slice(0,6));
+      } else grid.innerHTML = "";
+    }).catch(function(){ grid.innerHTML = ""; });
+  }
+};
+
+/* ----------------------------- VIEW: SEARCH -------------------------- */
+var ViewSearch = {
+  q: "", raw: [], sort: "rel", layout: "grid", seq: 0,
+  render: function(q){
+    q = String(q||"");
+    var title = $("#searchTitle");
+    if(q){ title.textContent = "“" + q + "”"; }
+    else { title.textContent = t("typeToSearch"); }
+    if(q !== this.q || !this.raw.length){
+      this.q = q; this.doSearch(q);
+    } else this.paint();
+  },
+  doSearch: function(q){
+    var my = ++this.seq;
+    var grid = $("#resultsGrid"), skel = $("#resultsSkel");
+    ["resultsEmpty","resultsError","resultsLocked"].forEach(function(id){
+      $("#"+id).hidden = true; });
+    grid.innerHTML = "";
+    if(!q){ $("#resultsEmpty").hidden = false;
+      $("#resultsEmpty p").textContent = t("emptyQ"); return; }
+    Store.pushSearch(q);
+    if(!inTelegram()){ $("#resultsLocked").hidden = true;
+      /* still show locked state instead of failing */
+      $("#resultsLocked").hidden = false; return; }
+    skel.hidden = false; skel.innerHTML = skeletonCards(8);
+    apiPost("/api/search", { q: q }).then(function(r){
+      if(my !== ViewSearch.seq) return;
+      skel.hidden = true;
+      if(r.status===200 && r.body.ok){
+        ViewSearch.raw = r.body.results || [];
+        LastResults = { q: q, list: ViewSearch.raw };
+        ViewSearch.paint();
+      } else if(r.status===401){
+        $("#resultsLocked").hidden = false;
+      } else {
+        $("#searchErrMsg").textContent = apiErrorMessage(r.status, r.body);
+        $("#resultsError").hidden = false;
+      }
+    }).catch(function(){
+      if(my !== ViewSearch.seq) return;
+      skel.hidden = true;
+      $("#searchErrMsg").textContent = t("errNet");
+      $("#resultsError").hidden = false;
+    });
+  },
+  paint: function(){
+    var grid = $("#resultsGrid");
+    var list = this.raw.slice();
+    if(this.sort==="durAsc") list.sort(function(a,b){ return durSecs(a.duration)-durSecs(b.duration); });
+    else if(this.sort==="durDesc") list.sort(function(a,b){ return durSecs(b.duration)-durSecs(a.duration); });
+    else if(this.sort==="az") list.sort(function(a,b){
+      return String(a.title).localeCompare(String(b.title)); });
+    grid.className = this.layout==="list" ? "card-list" : "card-grid";
+    $("#resultsEmpty").hidden = list.length > 0;
+    $("#searchMeta").textContent = list.length
+      ? list.length + " " + t("resultsFor") + " “" + this.q + "”" : "";
+    renderCardsInto(grid, list);
+  },
+  init: function(){
+    var self = this;
+    $("#sortSel").addEventListener("change", function(e){
+      self.sort = e.target.value; self.paint(); });
+    $("#layGrid").addEventListener("click", function(){
+      self.layout="grid"; $("#layGrid").classList.add("active");
+      $("#layList").classList.remove("active"); self.paint(); });
+    $("#layList").addEventListener("click", function(){
+      self.layout="list"; $("#layList").classList.add("active");
+      $("#layGrid").classList.remove("active"); self.paint(); });
+    $("#btnRetrySearch").addEventListener("click", function(){
+      self.raw = []; self.doSearch(self.q); });
+  }
+};
+/* search box behaviour: suggestions from local history */
+var SearchBox = {
+  init: function(){
+    var form = $("#searchForm"), input = $("#searchInput"),
+        box = $("#suggestBox"), clear = $("#searchClear");
+    function syncClear(){ clear.classList.toggle("show", !!input.value); }
+    input.addEventListener("input", function(){
+      syncClear(); SearchBox.suggest(input.value);
+    });
+    input.addEventListener("focus", function(){ SearchBox.suggest(input.value); });
+    input.addEventListener("blur", function(){
+      setTimeout(function(){ box.hidden = true; }, 140); });
+    input.addEventListener("keydown", function(e){
+      var items = $$(".sugg", box);
+      var act = items.indexOf($(".sugg.active", box));
+      if(e.key==="ArrowDown"||e.key==="ArrowUp"){
+        e.preventDefault();
+        if(!items.length) return;
+        if(act>=0) items[act].classList.remove("active");
+        act = e.key==="ArrowDown" ? (act+1)%items.length
+                                  : (act-1+items.length)%items.length;
+        items[act].classList.add("active");
+        input.value = items[act].getAttribute("data-q");
+        syncClear();
+      } else if(e.key==="Escape"){ box.hidden = true; input.blur(); }
+    });
+    clear.addEventListener("click", function(){
+      input.value = ""; syncClear(); box.hidden = true; input.focus(); });
+    form.addEventListener("submit", function(e){
+      e.preventDefault();
+      var q = input.value.trim();
+      box.hidden = true;
+      if(!q){ input.focus(); return; }
+      haptic("light");
+      Router.go("#/search?q=" + encodeURIComponent(q));
+      if(window.innerWidth<=900) input.blur();
+    });
+    document.addEventListener("click", function(e){
+      if(!box.hidden && !e.target.closest("#searchForm")) box.hidden = true; });
+  },
+  suggest: function(prefix){
+    var box = $("#suggestBox");
+    prefix = String(prefix||"").toLowerCase();
+    var hits = Store.searches.filter(function(q){
+      return !prefix || q.toLowerCase().indexOf(prefix)>=0; }).slice(0,7);
+    if(!hits.length){ box.hidden = true; return; }
+    box.innerHTML = "";
+    hits.forEach(function(q){
+      var b = document.createElement("button");
+      b.type = "button"; b.className = "sugg"; b.setAttribute("role","option");
+      b.setAttribute("data-q", q);
+      b.innerHTML = '<span class="ic">🕘</span><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+
+        esc(q)+'</span><span class="rm" title="Remove">✕</span>';
+      b.addEventListener("mousedown", function(e){
+        if(e.target.closest(".rm")){
+          e.preventDefault(); e.stopPropagation();
+          Store.dropSearch(q); SearchBox.suggest($("#searchInput").value);
+          return;
+        }
+        $("#searchInput").value = q;
+        box.hidden = true;
+        Router.go("#/search?q=" + encodeURIComponent(q));
+      });
+      box.appendChild(b);
+    });
+    box.hidden = false;
+  }
+};
+
+/* --------------------------- DOWNLOAD ENGINE ------------------------- */
+/* jobs: {jobId: {job_id, video:{id,title,thumb,duration,uploader},
+                  quality, status, progress, title, error, el}} */
+var DL = {
+  jobs: {}, order: [], pollTimer: null, doneNotified: {},
+  start: function(video, qualityId){
+    if(!needAuth()) return;
+    var q = qById(qualityId || Store.settings.quality);
+    haptic("medium");
+    apiPost("/api/download", { video_id: video.id, quality: q.id })
+    .then(function(r){
+      if(r.status===200 && r.body.ok){
+        DL.add(r.body.job_id, video, q);
+        toast("📥 " + t("toastQueued"));
+      } else toast("⚠️ " + esc(apiErrorMessage(r.status, r.body)));
+    }).catch(function(){ toast("⚠️ " + t("errNet")); });
+  },
+  add: function(jobId, video, q){
+    this.jobs[jobId] = { job_id: jobId, video: video, quality: q,
+      status:"queued", progress:0, title:"", error:"" };
+    this.order.unshift(jobId);
+    this.order = this.order.slice(0, 30);
+    this.kick(); this.renderAll();
+  },
+  kick: function(){
+    if(this.pollTimer) return;
+    var self = this;
+    this.pollTimer = setInterval(function(){ self.poll(); }, 2000);
+    this.poll();
+  },
+  active: function(){
+    var self = this, n = 0;
+    this.order.forEach(function(id){
+      var j = self.jobs[id];
+      if(j && ["queued","downloading","sending"].indexOf(j.status)>=0) n++;
+    });
+    return n;
+  },
+  poll: function(){
+    var self = this, pending = [];
+    this.order.forEach(function(id){
+      var j = self.jobs[id];
+      if(j && ["queued","downloading","sending"].indexOf(j.status)>=0)
+        pending.push(id);
+    });
+    if(!pending.length){ clearInterval(this.pollTimer);
+      this.pollTimer = null; this.renderAll(); return; }
+    var chain = Promise.resolve();
+    pending.forEach(function(id){
+      chain = chain.then(function(){
+        return apiGet("/api/job/" + id).then(function(r){
+          var j = self.jobs[id]; if(!j) return;
+          if(r.status===200 && r.body.ok && r.body.job){
+            var jb = r.body.job;
+            j.status = jb.status || j.status;
+            j.progress = clamp(jb.progress||0, 0, 100);
+            j.title = jb.title || j.title;
+            j.error = jb.error || "";
+            if(j.status==="done" && !self.doneNotified[id]){
+              self.doneNotified[id] = true;
+              toast("✅ " + t("toastDone")); haptic("heavy");
+            }
+            if(j.status==="error" && !self.doneNotified[id]){
+              self.doneNotified[id] = true;
+              toast("❌ " + t("toastFail") + ": " + esc(j.error).slice(0,80));
+            }
+          }
+        }).catch(function(){ /* keep old state; retry next tick */ });
+      });
+    });
+    chain.then(function(){ self.renderAll(); });
+  },
+  clearDone: function(){
+    var self = this;
+    this.order = this.order.filter(function(id){
+      var j = self.jobs[id];
+      var done = j && (j.status==="done" || j.status==="error");
+      if(done) delete self.jobs[id];
+      return !done;
+    });
+    this.renderAll();
+    toast("🧹 " + t("toastDoneCleared"));
+  },
+  pill: function(st){
+    var map = { queued:"stQueued", downloading:"stDownloading",
+                sending:"stSending", done:"stDone", error:"stError" };
+    return '<span class="pill '+esc(st)+'">'+esc(t(map[st]||"stQueued"))+'</span>';
+  },
+  renderAll: function(){
+    this.renderTray();
+    if(Router.current==="#/downloads") ViewDownloads.render();
+  },
+  renderTray: function(){
+    var tray = $("#tray"), list = $("#trayJobs");
+    var act = this.order.map(function(id){ return DL.jobs[id]; })
+      .filter(function(j){ return j; });
+    if(!act.length){ tray.classList.remove("show"); tray.hidden = true;
+      document.getElementById("app").classList.remove("tray-open"); return; }
+    tray.hidden = false;
+    requestAnimationFrame(function(){ tray.classList.add("show"); });
+    document.getElementById("app").classList.add("tray-open");
+    var n = this.active();
+    $("#trayCount").textContent = n
+      ? n + " " + t("stDownloading").toLowerCase() + "…" : t("stDone");
+    list.innerHTML = "";
+    act.slice(0,4).forEach(function(j){
+      var row = document.createElement("div");
+      row.className = "tray-job";
+      var indet = (j.status==="queued"||j.status==="sending");
+      row.innerHTML = '<span class="t">'+esc(j.title||j.video.title)+'</span>'+
+        '<div class="pbar'+(indet?' indet':'')+'"><i style="width:'+
+        clamp(j.progress,0,100)+'%"></i></div>'+
+        '<span style="font-size:12px;color:var(--text-2);min-width:38px;text-align:right">'+
+        (indet?"…":clamp(j.progress,0,100)+"%")+'</span>';
+      list.appendChild(row);
+    });
+  }
+};
+function quickDownload(video, ev){
+  if(!needAuth()) return;
+  var anchor = (ev && ev.currentTarget) || document.body;
+  Menu.open(anchor, [
+    { head: t("chooseQuality") },
+    { icon:"🎧", label:"MP3 · 320 kbps", tag:t("qMp3"),
+      onClick:function(){ DL.start(video, "mp3_320"); } },
+    { icon:"🎵", label:"MP3 · 128 kbps", tag:t("qMp3"),
+      onClick:function(){ DL.start(video, "mp3_128"); } },
+    { icon:"🎬", label:"MP4 · 720p", tag:t("qMp4"),
+      onClick:function(){ DL.start(video, "mp4_720"); } }
+  ]);
+}
+
+/* ------------------------------ VIEW: TRACK -------------------------- */
+var ViewTrack = {
+  video: null,
+  render: function(id){
+    var v = findTrack(id);
+    var wrap = $("#trackWrap");
+    if(!v){
+      wrap.innerHTML = '<div class="empty"><div class="big">🎵</div><h3>'+
+        esc(t("noResults"))+'</h3><p>'+esc(t("emptyQ"))+'</p></div>';
+      return;
+    }
+    if(this.video && this.video.id===v.id && $("#trackTitle").textContent) return;
+    this.video = v;
+    $("#trackImg").src = v.thumb || "";
+    $("#trackImg").alt = v.title || "";
+    $("#trackTitle").textContent = v.title || "Untitled";
+    $("#trackSub").textContent = [v.uploader, v.duration]
+      .filter(Boolean).join(" · ");
+    $("#trackDesc").innerHTML =
+      "<b>"+esc(v.title||"")+"</b><br>"+
+      esc(v.uploader||"") + (v.duration ? " · ⏱ "+esc(v.duration) : "") +
+      "<br><br>🔗 <span style='word-break:break-all'>https://www.youtube.com/watch?v="+
+      esc(v.id)+"</span>";
+    /* up next: siblings from last search, minus current */
+    var next = (LastResults.list||[]).filter(function(x){ return x.id!==v.id; })
+      .slice(0,10);
+    var box = $("#upNextList"); box.innerHTML = "";
+    if(!next.length) box.innerHTML =
+      '<p style="color:var(--text-2);font-size:13px">'+esc(t("emptyQ"))+'</p>';
+    next.forEach(function(x){
+      var it = document.createElement("div");
+      it.className = "upnext-item"; it.setAttribute("tabindex","0");
+      it.innerHTML = '<div class="thumb"><img loading="lazy" src="'+
+        esc(x.thumb)+'" alt="">'+
+        (x.duration?'<span class="badge-dur">'+esc(x.duration)+'</span>':"")+
+        '</div><div style="min-width:0"><p class="t">'+esc(x.title)+
+        '</p><p class="s">'+esc(x.uploader||"")+'</p></div>';
+      function go(){ openTrack(x); }
+      it.addEventListener("click", go);
+      it.addEventListener("keydown", function(e){
+        if(e.key==="Enter"){ e.preventDefault(); go(); } });
+      box.appendChild(it);
+    });
+  },
+  init: function(){
+    var self = this;
+    function cur(){ return self.video; }
+    $("#heroPlay").addEventListener("click", function(){
+      var v = cur(); if(v) Player.open(v); });
+    $("#heroDl").addEventListener("click", function(e){
+      var v = cur(); if(v) quickDownload(v, e); });
+    $("#btnDlAudio").addEventListener("click", function(){
+      var v = cur(); if(v) DL.start(v, "mp3_320"); });
+    $("#btnDlVideo").addEventListener("click", function(){
+      var v = cur(); if(v) DL.start(v, "mp4_720"); });
+    $("#btnAddPl").addEventListener("click", function(){
+      var v = cur(); if(v) ViewPlaylists.askAdd(v); });
+    $("#btnShare").addEventListener("click", function(){
+      var v = cur(); if(!v) return;
+      var url = "https://www.youtube.com/watch?v=" + v.id;
+      copyText(url, function(ok){
+        toast(ok ? "🔗 "+t("toastCopied") : "🔗 "+url, 3200); });
+      haptic("light");
+    });
+  }
+};
+
+/* ------------------------------ VIEW: ADULT --------------------------- */
+var ViewAdult = {
+  render: function(){
+    var sec = $("#view-adult"); if(!sec) return;
+    if(Store.ageOk) this.hub(sec); else this.gate(sec);
+  },
+  gate: function(sec){
+    sec.innerHTML =
+      '<div class="page-head"><h1>🔞 <span>'+esc(t("navAdult"))+'</span></h1></div>'+
+      '<div class="card" style="max-width:600px">'+
+      '<h2>'+esc(t("ageTitle"))+'</h2>'+
+      '<p>'+esc(t("ageBody"))+'</p>'+
+      '<label class="age-check"><input type="checkbox" id="ageAgree"><span>'+esc(t("ageAgree"))+'</span></label>'+
+      '<p class="hint">'+esc(t("ageNote"))+'</p>'+
+      '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:6px">'+
+      '<button class="btn primary" id="ageEnter" disabled>'+esc(t("ageEnter"))+'</button>'+
+      '<button class="btn ghost" id="ageBack">'+esc(t("ageBack"))+'</button></div></div>';
+    var cb = $("#ageAgree"), btn = $("#ageEnter");
+    cb.addEventListener("change", function(){ btn.disabled = !cb.checked; });
+    btn.addEventListener("click", function(){
+      if(!$("#ageAgree").checked) return;
+      Store.ageOk = true; Store.save();
+      try{ haptic("success"); }catch(e){}
+      ViewAdult.render();
+    });
+    $("#ageBack").addEventListener("click", function(){ Router.go("#/"); });
+  },
+  hub: function(sec){
+    sec.innerHTML =
+      '<div class="page-head"><h1>🔞 <span>'+esc(t("navAdult"))+'</span></h1>'+
+      '<span class="sub">'+esc(t("ageHubSub"))+'</span>'+
+      '<div class="toolbar"><button class="btn sm ghost" id="ageLock">🔒 '+esc(t("ageLock"))+'</button></div></div>'+
+      '<div class="card"><p>'+esc(t("ageHint"))+'</p>'+
+      '<div style="display:flex;gap:10px"><input class="input" id="adultQ" placeholder="'+esc(t("ageSearchPh"))+'">'+
+      '<button class="btn primary" id="adultGo">🔍</button></div></div>'+
+      '<div class="shelf"><div class="shelf-head"><h2 class="shelf-title"><span class="ic">🔞</span><span>'+esc(t("ageShelf"))+'</span></h2></div>'+
+      '<div class="card-grid" id="adultGrid">'+skeletonCards(6)+'</div></div>';
+    $("#ageLock").addEventListener("click", function(){
+      Store.ageOk = false; Store.save(); ViewAdult.render();
+    });
+    var self = this;
+    function go(){
+      var q = $("#adultQ").value.trim() || "18+ songs";
+      self.search(q);
+    }
+    $("#adultGo").addEventListener("click", go);
+    $("#adultQ").addEventListener("keydown", function(e){ if(e.key==="Enter") go(); });
+    this.search("18+ party songs");
+  },
+  search: function(q){
+    var grid = $("#adultGrid"); if(!grid) return;
+    grid.innerHTML = skeletonCards(6);
+    apiPost("/api/search", { q: q }).then(function(r){
+      if(r.status===200 && r.body.ok && (r.body.results||[]).length){
+        renderCardsInto(grid, r.body.results.slice(0,12));
+      } else {
+        grid.innerHTML = '<div class="empty"><div class="big">🔞</div><h3>'+esc(t("noResults"))+'</h3></div>';
+      }
+    }).catch(function(){
+      grid.innerHTML = '<div class="empty"><div class="big">⚠️</div><h3>'+esc(t("searchFailed"))+'</h3></div>';
+    });
+  }
+};
+/* ---------------------------- VIEW: DOWNLOADS ------------------------ */
+var ViewDownloads = {
+  render: function(){
+    var list = $("#jobsList"); list.innerHTML = "";
+    var ids = DL.order.filter(function(id){ return DL.jobs[id]; });
+    $("#jobsEmpty").hidden = ids.length > 0;
+    ids.forEach(function(id){
+      var j = DL.jobs[id];
+      var el = document.createElement("div");
+      el.className = "job";
+      var indet = (j.status==="queued"||j.status==="sending");
+      el.innerHTML =
+        '<div class="thumb">'+(j.video.thumb?'<img src="'+esc(j.video.thumb)+'" alt="">':"")+'</div>'+
+        '<div class="grow"><p class="t">'+esc(j.title||j.video.title)+'</p>'+
+        '<p class="s">'+esc(j.quality.label)+' · '+esc(j.video.uploader||"")+'</p>'+
+        '<div class="pbar'+(indet?' indet':'')+'"><i style="width:'+
+          clamp(j.progress,0,100)+'%"></i></div>'+
+        (j.status==="error"?'<p class="err">⚠️ '+esc(j.error||t("toastFail"))+'</p>':"")+
+        '</div>'+
+        '<div style="display:flex;flex-direction:column;gap:8px;align-items:flex-end">'+
+        DL.pill(j.status)+
+        '<span class="pct">'+(indet?"…":clamp(j.progress,0,100)+"%")+'</span>'+
+        (j.status==="error"?'<button class="btn sm" data-retry>↻ '+esc(t("retry"))+'</button>':"")+
+        '</div>';
+      var rb = el.querySelector("[data-retry]");
+      if(rb) rb.addEventListener("click", function(){
+        delete DL.doneNotified[id];
+        DL.start(j.video, j.quality.id);
+      });
+      el.addEventListener("click", function(e){
+        if(e.target.closest("[data-retry]")) return;
+        openTrack(j.video);
+      });
+      list.appendChild(el);
+    });
+    DL.renderTray();
+  },
+  init: function(){
+    $("#btnClearDone").addEventListener("click", function(){ DL.clearDone(); });
+    $("#jobsGoSearch").addEventListener("click", function(){
+      Router.go("#/"); setTimeout(function(){
+        $("#searchInput").focus(); }, 150); });
+    $("#trayOpen").addEventListener("click", function(){
+      Router.go("#/downloads"); });
+    $("#trayHide").addEventListener("click", function(){
+      $("#tray").classList.remove("show");
+      setTimeout(function(){ $("#tray").hidden = true; }, 260); });
+  }
+};
+
+/* ---------------------------- VIEW: HISTORY -------------------------- */
+var ViewHistory = {
+  render: function(){
+    var box = $("#histList"); box.innerHTML = "";
+    var list = Store.history;
+    $("#histEmpty").hidden = list.length > 0;
+    list.forEach(function(v){
+      var it = document.createElement("div");
+      it.className = "hist-item"; it.setAttribute("tabindex","0");
+      it.innerHTML = '<div class="thumb"><img loading="lazy" src="'+
+        esc(v.thumb||"")+'" alt="">'+
+        (v.duration?'<span class="badge-dur">'+esc(v.duration)+'</span>':"")+
+        '</div><div class="grow"><p class="t">'+esc(v.title)+
+        '</p><p class="s">'+esc(v.uploader||"")+' · '+esc(timeAgo(v.ts||Date.now()))+
+        '</p></div>'+
+        '<button class="icon-btn" data-dl aria-label="'+esc(t("dlAudio"))+
+        '">⬇</button>';
+      function go(){ openTrack(v); }
+      it.addEventListener("click", function(e){
+        if(e.target.closest("[data-dl]")){ e.stopPropagation();
+          quickDownload(v, e); return; }
+        go();
+      });
+      it.addEventListener("keydown", function(e){
+        if(e.key==="Enter"){ e.preventDefault(); go(); } });
+      box.appendChild(it);
+    });
+  },
+  init: function(){
+    $("#btnClearHist").addEventListener("click", function(){
+      Dlg.confirm("🧹", t("confirmClearHist"), t("clearAll"), function(){
+        Store.clearHistory(); ViewHistory.render();
+        toast("🧹 " + t("toastHistCleared")); });
+    });
+  }
+};
+
+/* --------------------------- VIEW: PLAYLISTS ------------------------- */
+var ViewPlaylists = {
+  openId: null,
+  render: function(plId){
+    this.openId = plId || null;
+    var home = $("#plHome"), det = $("#plDetail");
+    if(plId){
+      var pl = Store.getPlaylist(plId);
+      if(!pl){ Router.go("#/playlists"); return; }
+      home.hidden = true; det.hidden = false;
+      this.renderDetail(pl);
+    } else {
+      home.hidden = false; det.hidden = true;
+      this.renderGrid();
+    }
+  },
+  renderGrid: function(){
+    var g = $("#plGrid"); g.innerHTML = "";
+    $("#plEmpty").hidden = Store.playlists.length > 0;
+    Store.playlists.forEach(function(pl){
+      var c = document.createElement("div");
+      c.className = "pl-card"; c.setAttribute("tabindex","0");
+      var n = pl.tracks.length;
+      c.innerHTML = '<div class="t">🎶 '+esc(pl.name)+'</div>'+
+        '<div class="s">'+n+' '+(n===1?t("song"):t("songs"))+' · '+
+        esc(timeAgo(pl.created))+'</div>';
+      function go(){ Router.go("#/playlists?pl="+encodeURIComponent(pl.id)); }
+      c.addEventListener("click", go);
+      c.addEventListener("keydown", function(e){
+        if(e.key==="Enter"){ e.preventDefault(); go(); } });
+      g.appendChild(c);
+    });
+  },
+  renderDetail: function(pl){
+    $("#plName").textContent = "🎶 " + pl.name;
+    var n = pl.tracks.length;
+    $("#plMeta").textContent = n + " " + (n===1?t("song"):t("songs"));
+    var box = $("#plTracks"); box.innerHTML = "";
+    if(!n) box.innerHTML = '<div class="empty"><div class="big">🎶</div><h3>'+
+      esc(t("noPlSub"))+'</h3></div>';
+    pl.tracks.forEach(function(v, idx){
+      var it = document.createElement("div");
+      it.className = "pl-track"; it.setAttribute("tabindex","0");
+      it.innerHTML = '<span style="color:var(--text-3);width:22px;text-align:center">'+
+        (idx+1)+'</span>'+
+        '<div class="thumb"><img loading="lazy" src="'+esc(v.thumb||"")+'" alt=""></div>'+
+        '<div class="grow"><p class="t">'+esc(v.title)+'</p><p class="s">'+
+        esc(v.uploader||"")+(v.duration?" · "+esc(v.duration):"")+'</p></div>'+
+        '<button class="icon-btn" data-dl aria-label="'+esc(t("dlAudio"))+'">⬇</button>'+
+        '<button class="icon-btn" data-rm aria-label="'+esc(t("del"))+'">✕</button>';
+      function go(){ openTrack(v); }
+      it.addEventListener("click", function(e){
+        if(e.target.closest("[data-dl]")){ e.stopPropagation();
+          quickDownload(v, e); return; }
+        if(e.target.closest("[data-rm]")){ e.stopPropagation();
+          Store.removeFromPlaylist(pl.id, v.id);
+          ViewPlaylists.renderDetail(Store.getPlaylist(pl.id));
+          toast("🗑️ " + t("toastRemoved")); return; }
+        go();
+      });
+      it.addEventListener("keydown", function(e){
+        if(e.key==="Enter"){ e.preventDefault(); go(); } });
+      box.appendChild(it);
+    });
+    $("#plDlAll").onclick = function(){
+      if(!needAuth()) return;
+      var tracks = Store.getPlaylist(pl.id).tracks;
+      if(!tracks.length) return;
+      Dlg.confirm("⬇", tracks.length+" "+t("songs")+" — "+t("dlAll")+"?",
+        t("dlAll"), function(){
+          tracks.forEach(function(v, i){
+            setTimeout(function(){ DL.start(v, Store.settings.quality); },
+              i*1200); });
+          Router.go("#/downloads");
+        });
+    };
+    $("#plRename").onclick = function(){
+      Dlg.prompt("✏️", t("rename"), pl.name, t("save"), function(name){
+        pl.name = name; Store.save();
+        ViewPlaylists.renderDetail(pl); toast("✏️ " + t("toastCopied")); });
+    };
+    $("#plDelete").onclick = function(){
+      Dlg.confirm("🗑️", t("confirmDelPl"), t("del"), function(){
+        Store.deletePlaylist(pl.id);
+        toast("🗑️ " + t("toastPlDeleted"));
+        Router.go("#/playlists");
+      });
+    };
+  },
+  askNew: function(after){
+    Dlg.prompt("🎶", t("plNamePh"), "", t("create"), function(name){
+      var pl = Store.newPlaylist(name);
+      toast("🎶 " + t("toastPlCreated")); haptic("medium");
+      if(after) after(pl);
+      if(Router.current==="#/playlists") ViewPlaylists.render();
+    });
+  },
+  askAdd: function(video){
+    if(!Store.playlists.length){
+      this.askNew(function(pl){
+        Store.addToPlaylist(pl.id, video);
+        toast("➕ " + t("toastAdded"));
+      });
+      return;
+    }
+    var html = Store.playlists.map(function(pl){
+      return '<button class="pal-item" data-pl="'+esc(pl.id)+'">'+
+        '<span class="ic">🎶</span><span style="flex:1">'+esc(pl.name)+
+        '</span><span class="hint">'+pl.tracks.length+'</span></button>';
+    }).join("") +
+      '<div class="menu-sep"></div><button class="pal-item" data-new="1">'+
+      '<span class="ic">➕</span><span>'+esc(t("dlgNewPl"))+'</span></button>';
+    var body = Dlg.open(t("dlgPlaylistTitle"), html, [{label:t("cancel")}]);
+    $$("[data-pl]", body).forEach(function(b){
+      b.addEventListener("click", function(){
+        Store.addToPlaylist(b.getAttribute("data-pl"), video);
+        Dlg.close(); toast("➕ " + t("toastAdded")); haptic("light");
+      });
+    });
+    var nb = $("[data-new]", body);
+    if(nb) nb.addEventListener("click", function(){
+      Dlg.close(); ViewPlaylists.askNew(function(pl){
+        Store.addToPlaylist(pl.id, video);
+        toast("➕ " + t("toastAdded"));
+      });
+    });
+  },
+  init: function(){
+    $("#btnNewPl").addEventListener("click", function(){
+      ViewPlaylists.askNew(); });
+    $("#plBack").addEventListener("click", function(){
+      Router.go("#/playlists"); });
+  }
+};
+
+/* ---------------------------- VIEW: ACCOUNT -------------------------- */
+var ViewAccount = {
+  linked: null,
+  render: function(){
+    $("#ckSteps").innerHTML = [
+      ["1", t("step1t"), t("step1d")],
+      ["2", t("step2t"), t("step2d")],
+      ["3", t("step3t"), t("step3d")]
+    ].map(function(s){
+      return '<div class="step"><div class="n">'+s[0]+'</div><div class="b"><b>'+
+        esc(s[1])+'</b><span>'+esc(s[2])+'</span></div></div>';
+    }).join("");
+    this.refresh(false);
+  },
+  refresh: function(announce){
+    var self = this;
+    $("#ckState").textContent = "…";
+    if(!inTelegram()){
+      this.paint(false);
+      $("#ckHint").textContent = t("needTg");
+      return;
+    }
+    apiGet("/api/cookies/status").then(function(r){
+      if(r.status===200 && r.body.ok){
+        self.paint(!!r.body.linked);
+        if(announce) toast(self.linked ? "✅ "+t("ckLinked") : "ℹ️ "+t("ckNotLinked"));
+      } else {
+        self.paint(false);
+        $("#ckHint").textContent = apiErrorMessage(r.status, r.body);
+      }
+    }).catch(function(){
+      self.paint(false); $("#ckHint").textContent = t("errNet"); });
+  },
+  paint: function(linked){
+    this.linked = linked;
+    var dot = $("#ckDot");
+    dot.className = "dot " + (linked ? "on" : "off");
+    $("#ckState").textContent = linked ? "✅ " + t("ckLinked")
+                                       : "⚪ " + t("ckNotLinked");
+    $("#ckHint").textContent = linked ? t("ckLinkedHint") : t("ckNotLinkedHint");
+    $("#btnCkUnlink").hidden = !linked;
+  },
+  init: function(){
+    var self = this;
+    $("#btnCkRefresh").addEventListener("click", function(){
+      self.refresh(true); });
+    $("#btnCkUpload").addEventListener("click", function(){
+      if(!needAuth()) return;
+      var f = $("#ckFile").files[0];
+      if(!f){ toast("⚠️ " + t("toastCkNoFile")); return; }
+      var fd = new FormData();
+      fd.append("initData", INIT); fd.append("cookies", f);
+      $("#btnCkUpload").disabled = true;
+      fetch("/api/cookies", { method:"POST", body: fd })
+      .then(function(r){ return r.json().then(function(b){
+        return { status:r.status, body:b }; }); })
+      .then(function(r){
+        $("#btnCkUpload").disabled = false;
+        if(r.status===200 && r.body.ok && r.body.linked){
+          self.paint(true); $("#ckFile").value = "";
+          toast("✅ " + t("toastCkLinked")); haptic("heavy");
+        } else {
+          toast("⚠️ " + (r.status===400 ? t("toastCkBad")
+                        : esc(apiErrorMessage(r.status, r.body))));
+        }
+      }).catch(function(){
+        $("#btnCkUpload").disabled = false;
+        toast("⚠️ " + t("errNet"));
+      });
+    });
+    $("#btnCkUnlink").addEventListener("click", function(){
+      Dlg.confirm("🗑️", t("confirmUnlink"), t("ckUnlink"), function(){
+        apiDelete("/api/cookies").then(function(){
+          self.paint(false); toast("🗑️ " + t("toastCkUnlinked"));
+        }).catch(function(){ toast("⚠️ " + t("errNet")); });
+      });
+    });
+  }
+};
+
+/* --------------------------- VIEW: SETTINGS -------------------------- */
+var ViewSettings = {
+  render: function(){
+    var s = Store.settings;
+    $$("#segTheme button").forEach(function(b){
+      b.classList.toggle("active", b.getAttribute("data-v")===s.theme); });
+    $$("#segLang button").forEach(function(b){
+      b.classList.toggle("active", b.getAttribute("data-v")===s.lang); });
+    $("#setQuality").value = s.quality;
+    $("#setCompact").checked = !!s.compact;
+    $("#setMotion").checked = !!s.motion;
+    $("#setRail").checked = !!s.rail;
+    $("#aboutBuild").textContent = "build 2026-10-06-v4 · " +
+      (inTelegram() ? "Telegram ✓" : "browser preview");
+  },
+  init: function(){
+    $$("#segTheme button").forEach(function(b){
+      b.addEventListener("click", function(){
+        setTheme(b.getAttribute("data-v")); haptic("light"); });
+    });
+    $$("#segLang button").forEach(function(b){
+      b.addEventListener("click", function(){
+        setLang(b.getAttribute("data-v")); });
+    });
+    $("#setQuality").addEventListener("change", function(e){
+      Store.settings.quality = e.target.value; Store.save();
+      toast("🎧 " + esc(qById(e.target.value).label)); });
+    $("#setCompact").addEventListener("change", function(e){
+      Store.settings.compact = e.target.checked; Store.save(); applyDensity(); });
+    $("#setMotion").addEventListener("change", function(e){
+      Store.settings.motion = e.target.checked; Store.save(); applyMotion(); });
+    $("#setRail").addEventListener("change", function(e){
+      Store.settings.rail = e.target.checked; Store.save(); applyRail(); });
+  }
+};
+function setLang(v){
+  LANG = (v==="hi") ? "hi" : "en";
+  Store.settings.lang = LANG; Store.save();
+  $("#btnLang").textContent = LANG==="hi" ? "EN" : "अ";
+  applyI18n();
+  /* re-render text-heavy dynamic zones */
+  ViewHome.rendered = false;
+  Router.render();
+  haptic("light");
+}
+
+/* ------------------------- COMMAND PALETTE --------------------------- */
+var Palette = {
+  items: [],
+  idx: 0,
+  defs: function(){
+    return [
+      { ic:"🏠", label:t("palGoHome"), fn:function(){ Router.go("#/"); } },
+      { ic:"📥", label:t("palGoDl"), fn:function(){ Router.go("#/downloads"); } },
+      { ic:"🕘", label:t("palGoHist"), fn:function(){ Router.go("#/history"); } },
+      { ic:"🎶", label:t("palGoPl"), fn:function(){ Router.go("#/playlists"); } },
+      { ic:"👤", label:t("palGoAcc"), fn:function(){ Router.go("#/account"); } },
+      { ic:"⚙️", label:t("palGoSet"), fn:function(){ Router.go("#/settings"); } },
+      { ic:"🌙", label:t("palToggleTheme"), hint:"T", fn:function(){ cycleTheme(); } },
+      { ic:"🔍", label:t("qSearchPh"), hint:"/", fn:function(){
+          Router.go("#/"); setTimeout(function(){
+            $("#searchInput").focus(); }, 120); } },
+      { ic:"🧹", label:t("palClearHist"), fn:function(){
+          Store.clearHistory(); toast("🧹 "+t("toastHistCleared"));
+          if(Router.current==="#/history") ViewHistory.render(); } }
+    ];
+  },
+  open: function(){
+    this.items = this.defs(); this.idx = 0;
+    $("#palette").hidden = false;
+    var inp = $("#paletteInput"); inp.value = "";
+    this.paint("");
+    setTimeout(function(){ inp.focus(); }, 40);
+    haptic("light");
+  },
+  close: function(){ $("#palette").hidden = true; },
+  paint: function(q){
+    q = String(q||"").toLowerCase();
+    var list = this.items.filter(function(it){
+      return !q || it.label.toLowerCase().indexOf(q)>=0; });
+    this.view = list;
+    this.idx = clamp(this.idx, 0, Math.max(0, list.length-1));
+    var box = $("#paletteList"); box.innerHTML = "";
+    var self = this;
+    if(!list.length) box.innerHTML =
+      '<div class="empty" style="padding:24px"><p>'+esc(t("noResults"))+'</p></div>';
+    list.forEach(function(it, i){
+      var b = document.createElement("button");
+      b.className = "pal-item" + (i===self.idx ? " active" : "");
+      b.setAttribute("role","option");
+      b.innerHTML = '<span class="ic">'+it.ic+'</span><span>'+esc(it.label)+
+        '</span>'+(it.hint?'<span class="hint"><kbd>'+esc(it.hint)+
+        '</kbd></span>':"");
+      b.addEventListener("mousedown", function(e){
+        e.preventDefault(); self.choose(i); });
+      b.addEventListener("mousemove", function(){ self.idx = i;
+        self.paint($("#paletteInput").value); });
+      box.appendChild(b);
+    });
+  },
+  choose: function(i){
+    var it = (this.view||[])[i!=null?i:this.idx];
+    this.close(); if(it) it.fn();
+  },
+  init: function(){
+    var self = this, inp = $("#paletteInput");
+    inp.addEventListener("input", function(){
+      self.idx = 0; self.paint(inp.value); });
+    inp.addEventListener("keydown", function(e){
+      var n = (self.view||[]).length;
+      if(e.key==="ArrowDown"){ e.preventDefault();
+        self.idx = (self.idx+1)%Math.max(1,n); self.paint(inp.value); }
+      else if(e.key==="ArrowUp"){ e.preventDefault();
+        self.idx = (self.idx-1+Math.max(1,n))%Math.max(1,n);
+        self.paint(inp.value); }
+      else if(e.key==="Enter"){ e.preventDefault(); self.choose(); }
+      else if(e.key==="Escape"){ self.close(); }
+    });
+    $("#palette").addEventListener("mousedown", function(e){
+      if(e.target.id==="palette") self.close(); });
+  }
+};
+
+/* --------------------------- SHORTCUTS ------------------------------- */
+var SHORTCUTS = [
+  ["/", "Focus search"], ["Ctrl/⌘ K", "Command palette"],
+  ["T", "Toggle theme"], ["?", "This list"], ["Esc", "Close dialogs"]
+];
+function showShortcuts(){
+  var rows = SHORTCUTS.map(function(s){
+    return '<div class="set-row"><div class="grow"><div class="t">'+
+      esc(s[1])+'</div></div><kbd>'+esc(s[0])+'</kbd></div>';
+  }).join("");
+  Dlg.open("⌨️ " + t("shortcutTitle"), rows, [{label:t("close")}]);
+}
+function showAbout(){
+  Dlg.open("ℹ️ " + t("navAbout"),
+    "<p style='color:var(--text-2)'>"+esc(t("aboutDlg"))+"</p>"+
+    "<p style='font-size:12.5px;color:var(--text-3)'>v3.0 “mega” · "+
+    "build 2026-10-06</p>",
+    [{label:t("close")}]);
+}
+
+/* --------------------------- GLOBAL WIRING --------------------------- */
+function wireGlobal(){
+  /* masthead */
+  $("#btnMenu").addEventListener("click", function(){
+    document.getElementById("app").classList.toggle("nav-open");
+    haptic("light");
+  });
+  $("#navScrim").addEventListener("click", function(){
+    document.getElementById("app").classList.remove("nav-open"); });
+  $("#brandHome").addEventListener("click", function(){
+    Router.go("#/"); });
+  $("#btnTheme").addEventListener("click", cycleTheme);
+  $("#btnLang").addEventListener("click", function(){
+    setLang(LANG==="hi" ? "en" : "hi"); });
+  $("#btnPalette").addEventListener("click", function(){
+    Palette.open(); });
+  $("#avatarBtn").addEventListener("click", function(e){
+    e.stopPropagation();
+    Menu.open($("#avatarBtn"), [
+      { head: TG_USER ? (TG_USER.first_name||"Telegram") : "YTMUSIC" },
+      { icon:"👤", label:t("navAccount"),
+        onClick:function(){ Router.go("#/account"); } },
+      { icon:"🌙", label:t("palToggleTheme"),
+        onClick:function(){ cycleTheme(); } },
+      { icon:"🌐", label:t("setLang"),
+        onClick:function(){ setLang(LANG==="hi"?"en":"hi"); } },
+      { sep:true },
+      { icon:"ℹ️", label:t("navAbout"), onClick:showAbout }
+    ]);
+  });
+  /* sidebar */
+  $$("#sidebar .nav-item[data-route]").forEach(function(b){
+    b.addEventListener("click", function(){
+      haptic("light"); Router.go(b.getAttribute("data-route")); });
+  });
+  $("#navShortcuts").addEventListener("click", showShortcuts);
+  $("#navAbout").addEventListener("click", showAbout);
+  /* hero */
+  $("#heroSearch").addEventListener("click", function(){
+    $("#searchInput").focus();
+    $("#searchInput").scrollIntoView({block:"nearest"}); });
+  $("#heroAccount").addEventListener("click", function(){
+    Router.go("#/account"); });
+  var ra = $("#recentAll");
+  if(ra) ra.addEventListener("click", function(){
+    Router.go("#/history"); });
+  /* dialog */
+  $("#dlgClose").addEventListener("click", function(){ Dlg.close(); });
+  $("#scrim").addEventListener("mousedown", function(e){
+    if(e.target.id==="scrim") Dlg.close(); });
+  /* tooltips */
+  document.addEventListener("mouseover", function(e){
+    var el = e.target.closest("[data-tip]");
+    if(el) Tip.show(el);
+  });
+  document.addEventListener("mouseout", function(e){
+    if(e.target.closest("[data-tip]")) Tip.hide(); });
+  /* keyboard */
+  document.addEventListener("keydown", function(e){
+    var tag = (e.target.tagName||"").toLowerCase();
+    var typing = tag==="input"||tag==="textarea"||e.target.isContentEditable;
+    if((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==="k"){
+      e.preventDefault();
+      $("#palette").hidden ? Palette.open() : Palette.close();
+      return;
+    }
+    if(e.key==="Escape"){
+      if(!$("#palette").hidden){ Palette.close(); return; }
+      if(!$("#scrim").hidden){ Dlg.close(); return; }
+      Menu.close(); Tip.hide(); return;
+    }
+    if(typing) return;
+    if(e.key==="/"){ e.preventDefault(); $("#searchInput").focus(); }
+    else if(e.key.toLowerCase()==="t" && !e.ctrlKey && !e.metaKey){ cycleTheme(); }
+    else if(e.key==="?"){ showShortcuts(); }
+  });
+}
+
+/* -------------------------------- BOOT ------------------------------- */
+function boot(){
+  Store.load();
+  LANG = Store.settings.lang === "hi" ? "hi" : "en";
+  $("#btnLang").textContent = LANG==="hi" ? "EN" : "अ";
+  applyI18n();
+  tgInit();
+  setTheme(Store.settings.theme || "dark");
+  applyDensity(); applyMotion(); applyRail();
+  wireGlobal();
+  SearchBox.init(); ViewSearch.init(); ViewTrack.init(); Player.init();
+  ViewDownloads.init(); ViewHistory.init(); ViewPlaylists.init();
+  ViewAccount.init(); ViewSettings.init();
+  Palette.init();
+  Router.init(); Router.render();
+  /* keep tray honest after reload: no jobs survive reload by design */
+  DL.renderTray();
+}
+if(document.readyState==="loading")
+  document.addEventListener("DOMContentLoaded", boot);
+else boot();
+})();
+</script>
+</body>
+</html>

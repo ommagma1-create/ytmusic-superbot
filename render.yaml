@@ -1,0 +1,21 @@
+# YTMUSIC SuperBot — one Render web service runs EVERYTHING:
+# webapp (Mini App backend, on $PORT) + bot.py (all commands + VC music)
+# via start.sh. Render will ask for the sync:false values on apply.
+services:
+  - type: web
+    name: ytmusic-superbot
+    env: docker
+    dockerfilePath: ./Dockerfile
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
+      - key: API_ID
+        sync: false
+      - key: API_HASH
+        sync: false
+      - key: ADMIN_IDS
+        value: 8156053366
+      - key: SESSION_STRING
+        sync: false
+      - key: WEBAPP_URL
+        sync: false
